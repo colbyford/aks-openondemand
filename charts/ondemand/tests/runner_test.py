@@ -5,6 +5,7 @@ import pathlib
 import shutil
 import ssl
 import subprocess
+import tempfile
 import time
 import unittest.mock as mock
 import urllib.request
@@ -62,7 +63,7 @@ assert data["/home/ondemand/session/host_ip"] == "10.0.1.5"
 assert calls[1].endswith("/services/jupyter-abcd-service")
 print("PASS: stdlib Kubernetes discovery, identity headers, exact NodePort base URL and strong token")
 
-work = chart / "tests/work"
+work = pathlib.Path(tempfile.mkdtemp(prefix="ondemand-runner-", dir="/tmp"))
 try:
     home = work / "home"
     output = work / "output"

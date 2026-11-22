@@ -190,9 +190,10 @@ Authenticate as `ondemand` with the password you chose.
 3. Open the **Batch** interactive application and submit that relative path.
    The app launches a non-interactive Pod and writes `output.log` and its exit
    status in the session's output directory on NFS. View these through Files.
-4. Use the session's delete/cancel action to stop a workload and remove its
-   scheduler resources. App execution is limited to the requested duration;
-   the adapter's wall-time annotation alone is not an enforced deadline.
+4. Use the session's delete/cancel action to stop an active workload. App
+   execution is limited to the requested duration; the adapter's wall-time
+   annotation alone is not an enforced deadline. Completed workloads require
+   the administrator cleanup described below.
 
 These are Kubernetes-native apps, not the standard Job Composer submission
 templates. Slurm directives, job arrays, scheduler dependencies, SSH into
@@ -216,6 +217,30 @@ kubectl get namespaces
 # Use the generated workload namespace, normally <release>-ondemand-jobs-ondemand.
 kubectl -n "${RELEASE}-ondemand-jobs-ondemand" get pods,services
 kubectl -n "${RELEASE}-ondemand-jobs-ondemand" describe pod POD_NAME
+```
+
+**Completed-resource cleanup is required.** Open OnDemand skips scheduler
+deletion for sessions already marked completed, and the adapter does not add
+garbage-collection owner references. Deleting completed UI entries therefore
+does not remove their Pods/ConfigMaps. Clean them up periodically to avoid
+exhausting namespace quotas. For an individual Pod confirmed `Succeeded` or
+`Failed`:
+
+```bash
+JOBS_NS="${RELEASE}-ondemand-jobs-ondemand"
+POD=YOUR_COMPLETED_POD_NAME
+kubectl -n "$JOBS_NS" get pod "$POD" --output=jsonpath='{.status.phase}'
+# Only after confirming the Pod is finished:
+kubectl -n "$JOBS_NS" delete "pod/$POD" "service/${POD}-service" \
+  "configmap/${POD}-configmap" "secret/${POD}-secret" --ignore-not-found
+```
+
+Alternatively, **only after all sessions have stopped**, remove all
+adapter-managed resources (this preserves the namespace's API CA ConfigMap):
+
+```bash
+kubectl -n "$JOBS_NS" delete pod,service,configmap,secret \
+  --selector=app.kubernetes.io/managed-by=open-ondemand
 ```
 
 The portal credential can manage workloads only in its workload namespace.

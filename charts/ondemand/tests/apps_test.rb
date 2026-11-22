@@ -3,11 +3,13 @@ require 'yaml'
 require 'fileutils'
 require 'ostruct'
 require 'pathname'
+require 'tmpdir'
 
 CHART = File.expand_path('..', __dir__)
-WORK = File.join(__dir__, 'work')
+WORK = Dir.mktmpdir('ondemand-apps-', '/tmp')
+ORIGINAL_FILE_OPEN = File.method(:open)
 
-# All virtual home writes stay under this test's repository-local work directory.
+# All virtual home writes stay under this test's temporary directory.
 module TestFiles
   def map_path(path)
     path.to_s.sub(%r{\A/home/ondemand(?=/|$)}, "#{WORK}/home")
@@ -19,7 +21,7 @@ module TestFiles
   end
 
   def open(path, *args, &block)
-    super(map_path(path), *args, &block)
+    ORIGINAL_FILE_OPEN.call(map_path(path), *args, &block)
   end
 
   def realpath(path, *args)
