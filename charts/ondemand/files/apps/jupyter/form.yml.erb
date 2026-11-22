@@ -1,0 +1,31 @@
+---
+cluster: aks
+attributes:
+  interface:
+    widget: select
+    label: Interface
+    options:
+      - [JupyterLab, lab]
+      - [Jupyter Notebook, notebook]
+  cpu:
+    widget: number_field
+    label: CPU cores
+    value: 1
+    min: 1
+    max: 4
+    step: 1
+  memory:
+    widget: number_field
+    label: Memory (GiB)
+    value: 2
+    min: 1
+    max: 8
+    step: 1
+  hours:
+    widget: number_field
+    label: Runtime (hours)
+    value: 1
+    min: 1
+    max: 24
+    step: 1
+form: [interface, cpu, memory, hours]

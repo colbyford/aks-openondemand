@@ -1,0 +1,17 @@
+apiVersion: v1
+kind: ResourceQuota
+metadata:
+  name: jobs
+  namespace: {{ include "ondemand.jobsNamespace" . }}
+spec:
+  hard:
+    {{- toYaml .Values.jobs.quota | nindent 4 }}
+---
+apiVersion: v1
+kind: LimitRange
+metadata:
+  name: jobs
+  namespace: {{ include "ondemand.jobsNamespace" . }}
+spec:
+  limits:
+    {{- toYaml .Values.jobs.limitRange | nindent 4 }}

@@ -1,0 +1,81 @@
+nameOverride: ""
+fullnameOverride: ""
+
+# One portal process tree/PUN and Unix identity per release; replicas are fixed at 1.
+image:
+  repository: ""
+  tag: ""
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+auth:
+  existingSecret: ""
+ingress:
+  className: nginx
+  host: ""
+  tlsSecret: ""
+  annotations:
+    nginx.ingress.kubernetes.io/ssl-redirect: "true"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+nfs:
+  server: ""
+  path: ""
+resources:
+  requests:
+    cpu: 500m
+    memory: 1Gi
+  limits:
+    cpu: "2"
+    memory: 4Gi
+apps:
+  # Both runtime images must contain bash, coreutils timeout and Python3.
+  # Jupyter additionally needs JupyterLab and Notebook (Jupyter Server 2).
+  jupyterImage: ""
+  batchImage: ""
+jobs:
+  quota:
+    requests.cpu: "8"
+    requests.memory: 16Gi
+    limits.cpu: "8"
+    limits.memory: 16Gi
+    pods: "8"
+    services: "8"
+    services.nodeports: "8"
+    count/configmaps: "16"
+    count/secrets: "16"
+  # These maxima match the server-side application clamps (4 CPU, 8Gi).
+  limitRange:
+    - type: Container
+      default:
+        cpu: "1"
+        memory: 2Gi
+      defaultRequest:
+        cpu: "1"
+        memory: 2Gi
+      min:
+        cpu: 100m
+        memory: 128Mi
+      max:
+        cpu: "4"
+        memory: 8Gi
+networkPolicy:
+  # REQUIRED: AKS node subnet CIDR. NodePort SNAT may hide the portal pod's source.
+  # Do not use 0.0.0.0/0; also firewall NodePorts from outside the node subnet.
+  nodeSubnetCIDR: ""
+  # REQUIRED: unanchored Apache/Ruby-compatible regex matching only AKS node
+  # reverse-DNS names and/or addresses; never an arbitrary hostname wildcard.
+  nodeHostRegex: ""
+  # REQUIRED for private API endpoints: actual API endpoint IPv4 CIDR(s), not
+  # merely its ClusterIP (policy enforcement can occur after Service DNAT).
+  apiServerCIDRs: []
+  # Public-only IPv4 egress; DNS goes only to kube-system pods.
+  publicEgressExcept:
+    - 10.0.0.0/8
+    - 172.16.0.0/12
+    - 192.168.0.0/16
+    - 169.254.0.0/16
+    - 127.0.0.0/8
+    - 100.64.0.0/10
+    - 0.0.0.0/8
+    - 224.0.0.0/4
+    - 240.0.0.0/4

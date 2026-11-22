@@ -1,0 +1,35 @@
+<%
+require 'yaml'
+cores = [[Integer(cpu.to_s, 10), 1].max, 4].min
+gib = [[Integer(memory.to_s, 10), 1].max, 8].min
+seconds = [[Integer(hours.to_s, 10), 1].max, 24].min * 3600
+relative = script_path.to_s
+raise 'Choose a safe relative .sh path' unless relative.match?(%r{\A(?:[A-Za-z0-9_-]+/)*[A-Za-z0-9_-]+\.sh\z})
+resolved = File.realpath(File.join('/home/ondemand', relative))
+raise 'Script must be a regular file within your home' unless resolved.start_with?('/home/ondemand/') && File.file?(resolved)
+root = staged_root.to_s
+raise 'Invalid session path' unless root.match?(%r{\A/home/ondemand/[A-Za-z0-9_./-]+\z}) && !root.split('/').include?('..')
+image = ENV.fetch('OOD_BATCH_IMAGE')
+raise 'Invalid runtime image' unless image.match?(%r{\A[a-zA-Z0-9][a-zA-Z0-9._/:@-]+\z})
+options = {
+  'batch_connect' => { 'template' => 'basic' },
+  'script' => {
+    'wall_time' => seconds,
+    'native' => {
+      'container' => {
+        'name' => 'batch', 'image' => image,
+        'command' => ['bash', '/ood/runner.sh'],
+        'working_dir' => '/home/ondemand', 'restart_policy' => 'Never',
+        'cpu' => cores.to_s, 'memory' => "#{gib}Gi",
+        'env' => { 'HOME' => '/home/ondemand', 'OOD_SESSION_ROOT' => root,
+                   'OOD_SCRIPT_PATH' => relative, 'OOD_SECONDS' => seconds.to_s }
+      },
+      'configmap' => { 'files' => [{
+        'filename' => 'runner.sh',
+        'data' => File.read('/var/www/ood/apps/sys/batch/runner.sh'),
+        'mount_path' => '/ood/runner.sh', 'sub_path' => 'runner.sh'
+      }] }
+    }
+  }
+}
+%><%= YAML.dump(options) %>

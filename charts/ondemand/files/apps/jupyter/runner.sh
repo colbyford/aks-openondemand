@@ -1,0 +1,65 @@
+#!/usr/bin/env bash
+set -euo pipefail
+umask 077
+exec >>"${OOD_SESSION_ROOT}/output.log" 2>&1
+exec timeout --signal=TERM --kill-after=30s "${OOD_SECONDS}s" python3 - <<'PY'
+import ipaddress
+import json
+import os
+import pathlib
+import ssl
+import time
+import urllib.error
+import urllib.request
+
+root = pathlib.Path(os.environ["OOD_SESSION_ROOT"])
+identity = pathlib.Path("/var/run/secrets/kubernetes.io/serviceaccount")
+context = ssl.create_default_context(cafile=str(identity / "ca.crt"))
+namespace = os.environ["POD_NAMESPACE"]
+pod_name = os.environ["POD_NAME"]
+api = "https://kubernetes.default.svc/api/v1/namespaces/" + namespace
+
+def get(resource):
+    request = urllib.request.Request(api + "/" + resource)
+    request.add_header("Authorization", "Bearer " + (identity / "token").read_text().strip())
+    with urllib.request.urlopen(request, context=context, timeout=10) as response:
+        return json.load(response)
+
+for attempt in range(60):
+    try:
+        pod = get("pods/" + pod_name)
+        service = get("services/" + pod_name + "-service")
+        host = str(ipaddress.IPv4Address(pod["status"]["hostIP"]))
+        port = int(service["spec"]["ports"][0]["nodePort"])
+        if not 1 <= port <= 65535:
+            raise ValueError("Invalid NodePort")
+        break
+    except (urllib.error.URLError, KeyError, IndexError, ValueError):
+        if attempt == 59:
+            raise
+        time.sleep(2)
+
+base = f"/node/{host}/{port}/"
+for name, value in (("host_ip", host), ("node_port", str(port))):
+    staging = root / (name + ".new")
+    staging.write_text(value)
+    staging.replace(root / name)
+token = os.environ["OOD_TOKEN"]
+if len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
+    raise ValueError("Invalid session token")
+mode = os.environ["OOD_INTERFACE"]
+if mode not in ("lab", "notebook"):
+    raise ValueError("Invalid interface")
+configuration = {
+    "ServerApp": {
+        "ip": "0.0.0.0", "port": 8888, "port_retries": 0,
+        "open_browser": False, "base_url": base,
+        "root_dir": "/home/ondemand", "allow_remote_access": True,
+        "trust_xheaders": True
+    },
+    "IdentityProvider": {"token": token}
+}
+config = root / "jupyter.json"
+config.write_text(json.dumps(configuration))
+os.execvp("jupyter", ["jupyter", mode, "--config=" + str(config)])
+PY

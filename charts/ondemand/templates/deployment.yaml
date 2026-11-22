@@ -1,0 +1,148 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "ondemand.fullname" . }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ondemand.labels" . | nindent 4 }}
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate
+  selector:
+    matchLabels:
+      {{- include "ondemand.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      labels:
+        {{- include "ondemand.selectorLabels" . | nindent 8 }}
+        ondemand-role: portal
+      annotations:
+        checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
+        checksum/apps: {{ include (print $.Template.BasePath "/apps.yaml") . | sha256sum }}
+    spec:
+      serviceAccountName: {{ include "ondemand.serviceAccountName" . }}
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        runAsUser: 0
+        runAsGroup: 0
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: portal
+          image: {{ printf "%s:%s" (required "image.repository is required" .Values.image.repository) (required "image.tag is required" .Values.image.tag) | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # Apache must launch each PUN as ondemand via sudo/nginx_stage.
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: true
+          ports:
+            - name: http
+              containerPort: 80
+          env:
+            - name: KUBECONFIG
+              value: /run/ood-kube/config
+            - name: OOD_JUPYTER_IMAGE
+              value: {{ required "apps.jupyterImage is required" .Values.apps.jupyterImage | quote }}
+            - name: OOD_BATCH_IMAGE
+              value: {{ required "apps.batchImage is required" .Values.apps.batchImage | quote }}
+          startupProbe:
+            tcpSocket:
+              port: http
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: http
+          livenessProbe:
+            tcpSocket:
+              port: http
+            initialDelaySeconds: 30
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: home
+              mountPath: /home/ondemand
+            - name: auth
+              mountPath: /etc/ood/auth
+              readOnly: true
+            - name: config
+              mountPath: /etc/ood/config/ood_portal.yml
+              subPath: ood_portal.yml
+              readOnly: true
+            - name: config
+              mountPath: /etc/ood/config/clusters.d/aks.yml
+              subPath: aks.yml
+              readOnly: true
+            - name: config
+              mountPath: /etc/ood/kubeconfig.template
+              subPath: kubeconfig
+              readOnly: true
+            - name: config
+              mountPath: /etc/ood/config/apps/dashboard/env
+              subPath: dashboard-env
+              readOnly: true
+            - name: api-token
+              mountPath: /var/run/secrets/kubernetes.io/serviceaccount
+              readOnly: true
+            {{- range $app := list "jupyter" "batch" }}
+            - name: {{ $app }}-app
+              mountPath: /var/www/ood/apps/sys/{{ $app }}
+              readOnly: true
+            {{- end }}
+      volumes:
+        - name: home
+          nfs:
+            server: {{ required "nfs.server is required" .Values.nfs.server | quote }}
+            path: {{ required "nfs.path is required" .Values.nfs.path | quote }}
+        - name: auth
+          secret:
+            secretName: {{ required "auth.existingSecret is required" .Values.auth.existingSecret }}
+            # Apache's unprivileged workers must read the password hashes.
+            defaultMode: 0444
+            items:
+              - key: htpasswd
+                path: htpasswd
+        - name: config
+          configMap:
+            name: {{ include "ondemand.fullname" . }}-config
+        - name: api-token
+          projected:
+            # ondemand (1000) must read this token from its unprivileged PUN.
+            defaultMode: 0444
+            sources:
+              - serviceAccountToken:
+                  path: token
+                  expirationSeconds: 3600
+              - configMap:
+                  name: kube-root-ca.crt
+                  items:
+                    - key: ca.crt
+                      path: ca.crt
+              - downwardAPI:
+                  items:
+                    - path: namespace
+                      fieldRef:
+                        fieldPath: metadata.namespace
+        {{- range $app := list "jupyter" "batch" }}
+        - name: {{ $app }}-app
+          configMap:
+            name: {{ include "ondemand.fullname" $ }}-{{ $app }}
+            items:
+              - key: manifest
+                path: manifest.yml
+              - key: form
+                path: form.yml.erb
+              - key: submit
+                path: submit.yml.erb
+              - key: view
+                path: view.html.erb
+              - key: script
+                path: template/script.sh.erb
+              - key: runner
+                path: runner.sh
+        {{- end }}
