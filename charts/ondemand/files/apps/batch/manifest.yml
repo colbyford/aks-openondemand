@@ -1,0 +1,6 @@
+---
+name: Bash script
+category: Interactive Apps
+subcategory: Batch
+role: batch_connect
+description: Run a Bash script from your NFS home as a bounded AKS pod.

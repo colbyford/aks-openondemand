@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: {{ include "ondemand.jobsNamespace" . }}
+  annotations:
+    helm.sh/resource-policy: keep
+  labels:
+    ondemand-workload: {{ include "ondemand.fullname" . }}
+    pod-security.kubernetes.io/enforce: baseline
+    pod-security.kubernetes.io/enforce-version: latest

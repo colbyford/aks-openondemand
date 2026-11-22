@@ -1,0 +1,74 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ondemand.fullname" . }}-config
+  namespace: {{ .Release.Namespace }}
+data:
+  ood_portal.yml: |
+    servername: {{ required "ingress.host is required" .Values.ingress.host | quote }}
+    port: 80
+    ssl: null
+    use_rewrites: false
+    auth:
+      - 'AuthType Basic'
+      - 'AuthName "Open OnDemand"'
+      - 'AuthUserFile /etc/ood/auth/htpasswd'
+      - 'Require user ondemand'
+    user_map_match: '^ondemand$'
+    user_map_cmd: '/usr/bin/echo ondemand'
+    host_regex: {{ required "networkPolicy.nodeHostRegex is required (only AKS node hosts/IPs)" .Values.networkPolicy.nodeHostRegex | quote }}
+    node_uri: /node
+    rnode_uri: /rnode
+  aks.yml: |
+    v2:
+      metadata:
+        title: AKS workloads
+      job:
+        adapter: kubernetes
+        bin: /usr/local/bin/kubectl
+        config_file: /run/ood-kube/config
+        cluster: aks
+        context: aks
+        auth:
+          type: managed
+        server:
+          endpoint: https://kubernetes.default.svc
+          cert_authority_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+        namespace_prefix: {{ printf "%s-jobs-" (include "ondemand.fullname" .) | quote }}
+        all_namespaces: false
+        auto_supplemental_groups: false
+        mounts:
+          - type: nfs
+            name: home
+            host: {{ .Values.nfs.server | quote }}
+            path: {{ .Values.nfs.path | quote }}
+            destination_path: /home/ondemand
+      batch_connect:
+        ssh_allow: false
+        basic:
+          script_wrapper: "%s"
+  dashboard-env: |
+    OOD_JUPYTER_IMAGE={{ required "apps.jupyterImage is required" .Values.apps.jupyterImage }}
+    OOD_BATCH_IMAGE={{ required "apps.batchImage is required" .Values.apps.batchImage }}
+    OOD_JOBS_NAMESPACE={{ include "ondemand.jobsNamespace" . }}
+    OOD_NODE_HOST_REGEX={{ .Values.networkPolicy.nodeHostRegex }}
+    OOD_DISABLE_SHELL=true
+  kubeconfig: |
+    apiVersion: v1
+    kind: Config
+    clusters:
+      - name: aks
+        cluster:
+          server: https://kubernetes.default.svc
+          certificate-authority: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    users:
+      - name: portal
+        user:
+          tokenFile: /var/run/secrets/kubernetes.io/serviceaccount/token
+    contexts:
+      - name: aks
+        context:
+          cluster: aks
+          user: portal
+          namespace: {{ include "ondemand.jobsNamespace" . }}
+    current-context: aks

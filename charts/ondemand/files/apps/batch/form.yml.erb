@@ -1,0 +1,29 @@
+---
+cluster: aks
+attributes:
+  script_path:
+    widget: text_field
+    label: Script path relative to /home/ondemand
+    help: Existing .sh file, for example scripts/example.sh. No spaces, absolute paths or parent traversal.
+  cpu:
+    widget: number_field
+    label: CPU cores
+    value: 1
+    min: 1
+    max: 4
+    step: 1
+  memory:
+    widget: number_field
+    label: Memory (GiB)
+    value: 2
+    min: 1
+    max: 8
+    step: 1
+  hours:
+    widget: number_field
+    label: Runtime (hours)
+    value: 1
+    min: 1
+    max: 24
+    step: 1
+form: [script_path, cpu, memory, hours]

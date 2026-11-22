@@ -1,0 +1,67 @@
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicy
+metadata:
+  name: {{ .Release.Namespace }}-{{ include "ondemand.fullname" . }}-jobs
+spec:
+  failurePolicy: Fail
+  matchConstraints:
+    resourceRules:
+      - apiGroups: [""]
+        apiVersions: [v1]
+        operations: [CREATE, UPDATE]
+        resources: [pods]
+  validations:
+    - expression: >-
+        has(object.spec.securityContext) &&
+        has(object.spec.securityContext.runAsUser) && object.spec.securityContext.runAsUser == 1000 &&
+        has(object.spec.securityContext.runAsGroup) && object.spec.securityContext.runAsGroup == 1000 &&
+        has(object.spec.securityContext.runAsNonRoot) && object.spec.securityContext.runAsNonRoot &&
+        has(object.spec.securityContext.fsGroup) && object.spec.securityContext.fsGroup == 1000 &&
+        (!has(object.spec.securityContext.supplementalGroups) ||
+        object.spec.securityContext.supplementalGroups.all(g, g == 1000))
+      message: Workload pod UID, GID and fsGroup must be 1000.
+    - expression: >-
+        object.spec.containers.all(c,
+        has(c.securityContext) &&
+        !has(c.securityContext.runAsUser) && !has(c.securityContext.runAsGroup) &&
+        (!has(c.securityContext.runAsNonRoot) || c.securityContext.runAsNonRoot) &&
+        has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation &&
+        has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) &&
+        c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
+        (!has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0) &&
+        has(c.securityContext.seccompProfile) && c.securityContext.seccompProfile.type == 'RuntimeDefault') &&
+        (!has(object.spec.initContainers) || object.spec.initContainers.all(c,
+        has(c.securityContext) &&
+        !has(c.securityContext.runAsUser) && !has(c.securityContext.runAsGroup) &&
+        (!has(c.securityContext.runAsNonRoot) || c.securityContext.runAsNonRoot) &&
+        has(c.securityContext.allowPrivilegeEscalation) && !c.securityContext.allowPrivilegeEscalation &&
+        has(c.securityContext.capabilities) && has(c.securityContext.capabilities.drop) &&
+        c.securityContext.capabilities.drop.exists(d, d == 'ALL') &&
+        (!has(c.securityContext.capabilities.add) || size(c.securityContext.capabilities.add) == 0) &&
+        has(c.securityContext.seccompProfile) && c.securityContext.seccompProfile.type == 'RuntimeDefault')) &&
+        (!has(object.spec.ephemeralContainers) || size(object.spec.ephemeralContainers) == 0)
+      message: Containers must inherit UID/GID, drop all capabilities, disable escalation and use RuntimeDefault seccomp.
+    - expression: >-
+        (!has(object.spec.serviceAccountName) || object.spec.serviceAccountName == 'default')
+      message: Only the namespace-local read-only default workload service account is allowed.
+    - expression: >-
+        !has(object.spec.volumes) || object.spec.volumes.all(v,
+        has(v.configMap) || has(v.emptyDir) ||
+        (has(v.projected) && v.projected.sources.all(s,
+        has(s.serviceAccountToken) || has(s.downwardAPI) ||
+        (has(s.configMap) && s.configMap.name == 'kube-root-ca.crt'))) ||
+        (has(v.nfs) && v.nfs.server == {{ .Values.nfs.server | toJson }} && v.nfs.path == {{ .Values.nfs.path | toJson }}))
+      message: Only this release's NFS share, ConfigMaps, emptyDir and API identity projections are allowed.
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingAdmissionPolicyBinding
+metadata:
+  name: {{ .Release.Namespace }}-{{ include "ondemand.fullname" . }}-jobs
+spec:
+  policyName: {{ .Release.Namespace }}-{{ include "ondemand.fullname" . }}-jobs
+  validationActions: [Deny]
+  matchResources:
+    namespaceSelector:
+      matchLabels:
+        kubernetes.io/metadata.name: {{ include "ondemand.jobsNamespace" . }}
+        ondemand-workload: {{ include "ondemand.fullname" . }}

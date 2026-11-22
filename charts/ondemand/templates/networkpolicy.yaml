@@ -1,0 +1,56 @@
+{{- $nodes := required "networkPolicy.nodeSubnetCIDR is required for NodePort source NAT" .Values.networkPolicy.nodeSubnetCIDR -}}
+{{- if or (eq $nodes "0.0.0.0/0") (eq $nodes "::/0") -}}
+{{- fail "networkPolicy.nodeSubnetCIDR must be the private AKS node subnet, not all addresses" -}}
+{{- end -}}
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: jobs
+  namespace: {{ include "ondemand.jobsNamespace" . }}
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: {{ .Release.Namespace }}
+          podSelector:
+            matchLabels:
+              {{- include "ondemand.selectorLabels" . | nindent 14 }}
+              ondemand-role: portal
+        - podSelector: {}
+        - ipBlock:
+            cidr: {{ $nodes | quote }}
+      ports:
+        - protocol: TCP
+          port: 8888
+  egress:
+    {{- if not .Values.networkPolicy.apiServerCIDRs }}
+    {{- fail "networkPolicy.apiServerCIDRs is required for job connection discovery" }}
+    {{- end }}
+    - to:
+        {{- range .Values.networkPolicy.apiServerCIDRs }}
+        - ipBlock:
+            cidr: {{ . | quote }}
+        {{- end }}
+      ports:
+        - protocol: TCP
+          port: 443
+    - to:
+        - namespaceSelector:
+            matchLabels:
+              kubernetes.io/metadata.name: kube-system
+          podSelector:
+            matchLabels:
+              k8s-app: kube-dns
+      ports:
+        - protocol: UDP
+          port: 53
+        - protocol: TCP
+          port: 53
+    - to:
+        - ipBlock:
+            cidr: 0.0.0.0/0
+            except:
+              {{- toYaml .Values.networkPolicy.publicEgressExcept | nindent 14 }}

@@ -221,3 +221,8 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Local deployment values, credentials, and generated infrastructure output
+*.local.yaml
+htpasswd
+infra/*.json

@@ -1,0 +1,21 @@
+<%
+require 'ipaddr'
+require 'cgi'
+root = session.staged_root
+%>
+<% if !root.join('host_ip').file? || !root.join('node_port').file? %>
+<p>Jupyter is initializing. Refresh this session card shortly.</p>
+<% else %>
+<%
+host_ip = IPAddr.new(root.join('host_ip').read.strip).to_s
+allowed_host = Regexp.new("\\A(?:#{ENV.fetch('OOD_NODE_HOST_REGEX')})\\z")
+raise 'Unexpected node address' unless allowed_host.match?(host_ip)
+node_port = Integer(root.join('node_port').read.strip, 10)
+raise 'Invalid NodePort' unless (1..65535).cover?(node_port)
+token = root.join('token').read.strip
+raise 'Invalid session token' unless token.match?(/\A[0-9a-f]{64}\z/)
+interface_path = session.user_context.fetch('interface', 'lab') == 'notebook' ? 'tree' : 'lab'
+url = "/node/#{host_ip}/#{node_port}/#{interface_path}?token=#{token}"
+%>
+<a class="btn btn-primary" href="<%= CGI.escapeHTML(url) %>" target="_blank" rel="noopener noreferrer">Connect to Jupyter</a>
+<% end %>

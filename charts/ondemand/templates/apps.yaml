@@ -1,0 +1,13 @@
+{{- range $app := list "jupyter" "batch" }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ondemand.fullname" $ }}-{{ $app }}
+  namespace: {{ $.Release.Namespace }}
+data:
+  {{- range $key, $file := dict "manifest" "manifest.yml" "form" "form.yml.erb" "submit" "submit.yml.erb" "view" "view.html.erb" "script" "template/script.sh.erb" "runner" "runner.sh" }}
+  {{ $key }}: |
+    {{- $.Files.Get (printf "files/apps/%s/%s" $app $file) | nindent 4 }}
+  {{- end }}
+{{- end }}
