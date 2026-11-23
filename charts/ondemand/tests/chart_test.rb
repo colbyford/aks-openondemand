@@ -39,6 +39,12 @@ discovery = roles.find { |r| r['metadata']['name'] == 'connection-discovery' }
 raise 'Workload token overprivileged' unless discovery['rules'] == [
   {'apiGroups' => [''], 'resources' => ['pods', 'services'], 'verbs' => ['get']}
 ]
+pod_spec = deployment['spec']['template']['spec']
+api_token_volume = pod_spec['volumes'].find { |volume| volume['name'] == 'api-token' }
+raise 'Projected token must be readable by the PUN user' unless
+  pod_spec['securityContext']['runAsUser'].nil? &&
+  pod_spec['securityContext']['runAsGroup'].nil? &&
+  api_token_volume.dig('projected', 'defaultMode') == 292
 find.call('ConfigMap').each do |config|
   next unless config['data']['submit']
   raise 'Helm consumed ERB' unless config['data']['submit'].include?('<%= YAML.dump(options) %>')
@@ -46,6 +52,8 @@ end
 portal_config = find.call('ConfigMap').find { |c| c['data']['ood_portal.yml'] }
 ood = YAML.safe_load(portal_config['data']['ood_portal.yml'])
 raise 'Upstream TLS rewrite loop' unless ood['ssl'].nil? && ood['use_rewrites'] == false
+raise 'Unexpected user map command' unless ood['user_map_match'] == '^ondemand$' &&
+                                           ood['user_map_cmd'].nil?
 raise 'Anchored nested URL regex' if ood['host_regex'].match?(/[\^$]/)
 raise 'Missing kubeconfig seed' unless deployment['spec']['template']['spec']['containers'][0]['volumeMounts'].any? { |m| m['mountPath'] == '/etc/ood/kubeconfig.template' }
 
