@@ -28,8 +28,7 @@ spec:
         {{- toYaml . | nindent 8 }}
       {{- end }}
       securityContext:
-        runAsUser: 0
-        runAsGroup: 0
+        # Leave UID and GID unset so kubelet honors the projected token's defaultMode.
         seccompProfile:
           type: RuntimeDefault
       containers:
