@@ -39,8 +39,10 @@ and storage authorization before extending this design.
 Azure CLI, kubectl, Helm 3.13+, Docker (or ACR Build), and an Azure subscription
 with permission to create resources and role assignments are required. AKS must
 support `admissionregistration.k8s.io/v1` ValidatingAdmissionPolicy (Kubernetes
-1.30+). Provision an ingress controller supporting WebSockets and enforced
-HTTPS, a DNS hostname, and a matching trusted TLS certificate.
+1.30+). The demo below uses the AKS Application Routing add-on for ingress. A
+production deployment needs a hostname in DNS and a matching trusted TLS
+certificate; the demo can use a local hosts-file entry and a self-signed
+certificate instead.
 
 These commands create billable Azure resources. Run them from an administrator
 workstation. Set an **absolute** repository path:
@@ -52,7 +54,7 @@ export AKS=ood-aks
 export LOCATION=eastus
 export NS=ood-alice
 export RELEASE=alice
-export HOST=alice.ondemand.example.org
+export HOST=alice.ondemand.test
 
 az login
 az group create --name "$RG" --location "$LOCATION"
@@ -60,7 +62,22 @@ az deployment group create --name ondemand --resource-group "$RG" \
   --template-file "$REPO/infra/main.bicep" \
   --parameters clusterName="$AKS" nodeMinCount=1 nodeMaxCount=3
 az aks get-credentials --resource-group "$RG" --name "$AKS"
+
+# Install the managed ingress controller and wait for its public IP.
+az aks approuting enable --resource-group "$RG" --name "$AKS"
+kubectl -n app-routing-system get svc nginx --watch
 ```
+
+Stop the watch after `EXTERNAL-IP` is assigned, then save the address:
+
+```bash
+export INGRESS_IP=$(kubectl -n app-routing-system get svc nginx \
+  --output=jsonpath='{.status.loadBalancer.ingress[0].ip}')
+printf '%s\n' "$INGRESS_IP"
+```
+
+The public LoadBalancer IP may take a few minutes to appear. The demo hostname
+is local to your workstation; it does not require public DNS.
 
 `nodeMinCount` must not exceed `nodeMaxCount`. Use a region supporting the chosen
 VM size and premium Azure Files NFS. The infrastructure uses node subnet
@@ -109,15 +126,25 @@ htpasswd -Bc "$AUTH_FILE" ondemand
 kubectl -n "$NS" create secret generic ondemand-auth \
   --from-file="htpasswd=$AUTH_FILE"
 rm "$AUTH_FILE"
+
+# Demo only: create a self-signed certificate for the local demo hostname.
+# For production, use a certificate issued by a trusted CA instead.
+TLS_DIR=$(mktemp -d /tmp/ondemand-tls.XXXXXX)
+openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
+  -keyout "$TLS_DIR/tls.key" -out "$TLS_DIR/tls.crt" \
+  -subj "/CN=$HOST" -addext "subjectAltName=DNS:$HOST"
+chmod 600 "$TLS_DIR/tls.key"
 kubectl -n "$NS" create secret tls ondemand-tls \
-  --cert=/absolute/path/to/tls.crt --key=/absolute/path/to/tls.key
+  --cert="$TLS_DIR/tls.crt" --key="$TLS_DIR/tls.key"
 ```
 
 The authentication file must contain exactly one entry, named `ondemand`.
-Never disable HTTPS: HTTP Basic authentication sends the password on each
-request. Configure your ingress controller to redirect/reject HTTP, honor the
-configured hostname, and preserve WebSocket connections. Apache uses internal
-HTTP only; do not publish its Service separately.
+Sign in as `ondemand` with the password entered at the `htpasswd` prompt. The
+self-signed certificate is not trusted by browsers, so expect a warning during
+this demo. Never disable HTTPS: HTTP Basic authentication sends the password
+on each request. The ingress must redirect/reject HTTP, honor the configured
+hostname, and preserve WebSocket connections. Apache uses internal HTTP only;
+do not publish its Service separately.
 
 Get the API endpoint's IPv4 addresses for workload connection discovery:
 
@@ -146,7 +173,7 @@ image:
 auth:
   existingSecret: ondemand-auth
 ingress:
-  className: nginx
+  className: webapprouting.kubernetes.azure.com
   host: ${HOST}
   tlsSecret: ondemand-tls
 nfs:
@@ -161,10 +188,15 @@ networkPolicy:
 EOF
 ```
 
-Use your controller's class and annotations if it is not ingress-nginx.
+Use your controller's class and annotations if it is not the AKS Application
+Routing add-on.
 `nodeHostRegex` must match only actual AKS node addresses/hostnames; never use
 an arbitrary-host wildcard. The supplied Jupyter app uses the node's IPv4
 address and configures its base URL for Open OnDemand's `/node/` proxy.
+Do not set pod-level `runAsUser` or `runAsGroup`: Kubernetes makes projected
+service-account tokens mode `0600` when a UID is specified, but the Open
+OnDemand PUN reads the token as `ondemand` (UID 1000). The chart relies on the
+image's root defaults for Apache and switches to `ondemand` for the PUN.
 
 ## Install and use
 
@@ -176,10 +208,24 @@ helm upgrade --install "$RELEASE" "$REPO/charts/ondemand" --namespace "$NS" \
   --set-json "networkPolicy.apiServerCIDRs=$API_CIDRS" \
   --wait --timeout 10m
 kubectl -n "$NS" get pods,services,ingress
+kubectl -n app-routing-system get svc nginx -o wide
 ```
 
-Point the hostname at your ingress controller and open `https://$HOST`.
-Authenticate as `ondemand` with the password you chose.
+Use the controller Service's `EXTERNAL-IP` as the public IP; the Ingress
+`ADDRESS` column may remain blank.
+
+For this local demo, map the hostname to the ingress IP on your workstation.
+Print the line to add to its hosts file:
+
+```bash
+printf '%s %s\n' "$INGRESS_IP" "$HOST"
+```
+
+On macOS/Linux, append the printed line to `/etc/hosts`; on Windows, add it to
+`C:\Windows\System32\drivers\etc\hosts`. This mapping is local to that
+workstation. Then open `https://$HOST` and authenticate as `ondemand` with the
+password you chose. For a public deployment, create a DNS record pointing the
+hostname to the ingress IP and use a trusted certificate.
 
 1. Open **Interactive Apps → Jupyter**, choose JupyterLab or Notebook, CPU,
    memory, and duration, and launch. In **My Interactive Sessions**, wait for
