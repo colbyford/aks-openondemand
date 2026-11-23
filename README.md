@@ -290,10 +290,13 @@ kubectl -n "$JOBS_NS" delete pod,service,configmap,secret \
 ```
 
 The portal credential can manage workloads only in its workload namespace.
-Workloads receive a separate read-only Pod/Service credential to discover their
-connection endpoint. Neither has cluster-admin permissions. Network policies
-limit workload egress to DNS, the specified API endpoint, and public IPv4
-destinations; add narrowly scoped rules if your jobs need private data services.
+Workloads receive a limited credential to get Pods and Services and create
+Secrets; they cannot get or list Secrets or create Pods. The Jupyter runner
+uses the create permission for its per-session connection Secret, which the
+portal adapter reads to render the authenticated connection button. Neither
+credential has cluster-admin permissions. Network policies limit workload
+egress to DNS, the specified API endpoint, and public IPv4 destinations; add
+narrowly scoped rules if your jobs need private data services.
 The baseline Pod Security profile permits the adapter's inline NFS volumes;
 additional admission rules enforce the expected identity and permitted export.
 Do not grant workload users access to modify those policies, namespaces, or
