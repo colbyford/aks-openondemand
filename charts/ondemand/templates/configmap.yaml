@@ -15,7 +15,6 @@ data:
       - 'AuthUserFile /etc/ood/auth/htpasswd'
       - 'Require user ondemand'
     user_map_match: '^ondemand$'
-    user_map_cmd: '/usr/bin/echo ondemand'
     host_regex: {{ required "networkPolicy.nodeHostRegex is required (only AKS node hosts/IPs)" .Values.networkPolicy.nodeHostRegex | quote }}
     node_uri: /node
     rnode_uri: /rnode
