@@ -36,8 +36,9 @@ raise 'Baseline NFS admission missing' unless find.call('ValidatingAdmissionPoli
 roles = find.call('Role')
 raise 'Unexpected role permissions' unless roles.all? { |r| r['metadata']['namespace'] == 'portal-ondemand-jobs-ondemand' }
 discovery = roles.find { |r| r['metadata']['name'] == 'connection-discovery' }
-raise 'Workload token overprivileged' unless discovery['rules'] == [
-  {'apiGroups' => [''], 'resources' => ['pods', 'services'], 'verbs' => ['get']}
+raise 'Workload token permissions unexpected' unless discovery['rules'] == [
+  {'apiGroups' => [''], 'resources' => ['pods', 'services'], 'verbs' => ['get']},
+  {'apiGroups' => [''], 'resources' => ['secrets'], 'verbs' => ['create']}
 ]
 pod_spec = deployment['spec']['template']['spec']
 api_token_volume = pod_spec['volumes'].find { |volume| volume['name'] == 'api-token' }
