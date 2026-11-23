@@ -25,6 +25,31 @@ def get(resource):
     with urllib.request.urlopen(request, context=context, timeout=10) as response:
         return json.load(response)
 
+def create_connection_secret(host, port, token, interface_path):
+    secret = {
+        "apiVersion": "v1",
+        "kind": "Secret",
+        "metadata": {"name": pod_name + "-secret"},
+        "type": "Opaque",
+        "stringData": {
+            "host_ip": host,
+            "node_port": str(port),
+            "token": token,
+            "interface_path": interface_path,
+        },
+    }
+    request = urllib.request.Request(
+        api + "/secrets",
+        data=json.dumps(secret).encode(),
+        headers={
+            "Authorization": "Bearer " + (identity / "token").read_text().strip(),
+            "Content-Type": "application/json",
+        },
+        method="POST",
+    )
+    with urllib.request.urlopen(request, context=context, timeout=10) as response:
+        response.read()
+
 for attempt in range(60):
     try:
         pod = get("pods/" + pod_name)
@@ -40,16 +65,14 @@ for attempt in range(60):
         time.sleep(2)
 
 base = f"/node/{host}/{port}/"
-for name, value in (("host_ip", host), ("node_port", str(port))):
-    staging = root / (name + ".new")
-    staging.write_text(value)
-    staging.replace(root / name)
 token = os.environ["OOD_TOKEN"]
 if len(token) != 64 or any(c not in "0123456789abcdef" for c in token):
     raise ValueError("Invalid session token")
 mode = os.environ["OOD_INTERFACE"]
 if mode not in ("lab", "notebook"):
     raise ValueError("Invalid interface")
+interface_path = "tree" if mode == "notebook" else "lab"
+create_connection_secret(host, port, token, interface_path)
 configuration = {
     "ServerApp": {
         "ip": "0.0.0.0", "port": 8888, "port_retries": 0,
