@@ -8,6 +8,7 @@ require 'tmpdir'
 CHART = File.expand_path('..', __dir__)
 WORK = Dir.mktmpdir('ondemand-apps-', '/tmp')
 ORIGINAL_FILE_OPEN = File.method(:open)
+ORIGINAL_FILE_REALPATH = File.method(:realpath)
 
 # All virtual home writes stay under this test's temporary directory.
 module TestFiles
@@ -25,7 +26,8 @@ module TestFiles
   end
 
   def realpath(path, *args)
-    super(map_path(path), *args).sub("#{WORK}/home", '/home/ondemand')
+    super(map_path(path), *args)
+      .sub(ORIGINAL_FILE_REALPATH.call("#{WORK}/home"), '/home/ondemand')
   end
 
   def file?(path)
@@ -102,17 +104,13 @@ begin
   check((File.stat("#{WORK}/home/sessions/test/token").mode & 0777) == 0600, 'Token permissions')
   check((File.stat("#{WORK}/home/sessions/test").mode & 0777) == 0700, 'Session permissions')
   submit('jupyter', interface: 'notebook')
-  File.write("#{WORK}/home/sessions/test/host_ip", '10.0.1.5')
-  File.write("#{WORK}/home/sessions/test/node_port", '30001')
-  session = OpenStruct.new(staged_root: Pathname.new('/home/ondemand/sessions/test'),
-                           user_context: {'interface' => 'notebook'})
-  # Upstream custom connection view evaluates connect.instance_eval { binding };
-  # the surrounding template's session local is retained in the block binding.
-  connect = OpenStruct.new(host: 'reverse.example', port: 30001)
+  connect = OpenStruct.new(host: 'reverse.example', port: 30001,
+                           host_ip: '10.0.1.5', node_port: 30001,
+                           token: 'a' * 64, interface_path: 'tree')
   view = ERB.new(File.read("#{CHART}/files/apps/jupyter/view.html.erb"))
             .result(connect.instance_eval { binding })
   check(view.include?('/node/10.0.1.5/30001/tree?token='), 'View base URL mismatch')
-  File.delete("#{WORK}/home/sessions/test/node_port")
+  connect = OpenStruct.new(host: 'reverse.example', port: 30001)
   view = ERB.new(File.read("#{CHART}/files/apps/jupyter/view.html.erb"))
             .result(connect.instance_eval { binding })
   check(view.include?('initializing'), 'View readiness race')
