@@ -36,7 +36,17 @@ def urlopen(request, **kwargs):
     assert kwargs["timeout"] == 10
     calls.append(request.full_url)
     response = mock.MagicMock()
-    response.__enter__.return_value.read.return_value = json.dumps(responses.pop(0))
+    if request.get_method() == "POST":
+        secret = json.loads(request.data)
+        assert request.full_url.endswith("/secrets")
+        assert secret["metadata"]["name"] == "jupyter-abcd-secret"
+        assert secret["stringData"] == {
+            "host_ip": "10.0.1.5", "node_port": "30001",
+            "token": "a" * 64, "interface_path": "lab",
+        }
+        response.__enter__.return_value.read.return_value = b"{}"
+    else:
+        response.__enter__.return_value.read.return_value = json.dumps(responses.pop(0)).encode()
     return response
 
 environment = {
@@ -59,9 +69,9 @@ assert configuration["ServerApp"]["port"] == 8888
 assert configuration["IdentityProvider"]["token"] == "a" * 64
 assert configuration["ServerApp"]["allow_remote_access"]
 assert "disable_check_xsrf" not in configuration["ServerApp"]
-assert data["/home/ondemand/session/host_ip"] == "10.0.1.5"
 assert calls[1].endswith("/services/jupyter-abcd-service")
-print("PASS: stdlib Kubernetes discovery, identity headers, exact NodePort base URL and strong token")
+assert calls[2].endswith("/secrets")
+print("PASS: Kubernetes discovery, connection Secret, NodePort base URL and strong token")
 
 work = pathlib.Path(tempfile.mkdtemp(prefix="ondemand-runner-", dir="/tmp"))
 try:
