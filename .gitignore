@@ -226,3 +226,8 @@ __marimo__/
 *.local.yaml
 htpasswd
 infra/*.json
+
+# TLS certificates
+*.crt
+*.key
+    
