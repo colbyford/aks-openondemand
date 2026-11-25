@@ -50,8 +50,8 @@ workstation. Set an **absolute** repository path:
 
 ```bash
 export REPO=/absolute/path/to/aks-openondemand
-export RG=ondemand-demo
-export AKS=ood-aks
+export RG=rg-ondemand-eastus-001
+export AKS=aks-ood-eastus-001
 export LOCATION=eastus
 export NS=ood-alice
 export RELEASE=alice
@@ -225,7 +225,9 @@ printf '%s %s\n' "$INGRESS_IP" "$HOST"
 On macOS/Linux, append the printed line to `/etc/hosts`; on Windows, add it to
 `C:\Windows\System32\drivers\etc\hosts`. This mapping is local to that
 workstation. Then open `https://$HOST` and authenticate as `ondemand` with the
-password you chose. For a public deployment, create a DNS record pointing the
+password you chose.
+
+For a public deployment, create a DNS record pointing the
 hostname to the ingress IP and use a trusted certificate.
 
 1. Open **Interactive Apps → Jupyter**, choose JupyterLab or Notebook, CPU,
