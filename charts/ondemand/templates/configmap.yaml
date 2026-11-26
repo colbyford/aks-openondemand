@@ -46,7 +46,20 @@ data:
         ssh_allow: false
         basic:
           script_wrapper: "%s"
+  {{- if .Values.slurm.enabled }}
+  slurm-cluster.yml: |
+    v2:
+      metadata:
+        title: Slurm
+      login:
+        host: {{ printf "%s-slurm-0.%s-slurm" (include "ondemand.fullname" .) (include "ondemand.fullname" .) }}
+      job:
+        adapter: slurm
+        bin: /usr/bin
+        conf: /etc/slurm/slurm.conf
+  {{- end }}
   dashboard-env: |
+    OOD_PORTAL_ORIGIN=https://{{ required "ingress.host is required" .Values.ingress.host }}
     OOD_JUPYTER_IMAGE={{ required "apps.jupyterImage is required" .Values.apps.jupyterImage }}
     OOD_BATCH_IMAGE={{ required "apps.batchImage is required" .Values.apps.batchImage }}
     {{- with .Values.apps.desktopImage }}
@@ -54,7 +67,9 @@ data:
     {{- end }}
     OOD_JOBS_NAMESPACE={{ include "ondemand.jobsNamespace" . }}
     OOD_NODE_HOST_REGEX={{ .Values.networkPolicy.nodeHostRegex }}
+    {{- if not .Values.slurm.enabled }}
     OOD_DISABLE_SHELL=true
+    {{- end }}
   kubeconfig: |
     apiVersion: v1
     kind: Config

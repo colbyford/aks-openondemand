@@ -75,6 +75,7 @@ begin
   File.write("#{WORK}/home/scripts/example.sh", "echo hello\n")
   ENV['OOD_JUPYTER_IMAGE'] = ENV['OOD_BATCH_IMAGE'] = 'quay.io/jupyter/base-notebook:2025-03-14'
   ENV['OOD_DESKTOP_IMAGE'] = 'docker.io/example/xfce-novnc:2025-03-14'
+  ENV['OOD_PORTAL_ORIGIN'] = 'https://ood.example.org'
   ENV['OOD_NODE_HOST_REGEX'] = '10\.0\.1\.[0-9]{1,3}'
   %w[jupyter batch desktop].each do |app|
     YAML.safe_load(ERB.new(File.read("#{CHART}/files/apps/#{app}/form.yml.erb")).result)
@@ -102,6 +103,7 @@ begin
   rejects('batch', script_path: 'scripts/escape.sh')
   lab = submit('jupyter')
   check(lab['script']['native']['container']['env']['OOD_TOKEN'].match?(/\A[0-9a-f]{64}\z/), 'Weak token')
+  check(lab['script']['native']['container']['env']['OOD_PORTAL_ORIGIN'] == 'https://ood.example.org', 'Portal origin missing')
   check((File.stat("#{WORK}/home/sessions/test/token").mode & 0777) == 0600, 'Token permissions')
   check((File.stat("#{WORK}/home/sessions/test").mode & 0777) == 0700, 'Session permissions')
   submit('jupyter', interface: 'notebook')

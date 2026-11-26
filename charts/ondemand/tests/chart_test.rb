@@ -11,6 +11,8 @@ values = {
   apps: {jupyterImage: 'quay.io/jupyter/base-notebook:2025-03-14',
          batchImage: 'quay.io/jupyter/base-notebook:2025-03-14',
          desktopImage: 'docker.io/example/xfce-novnc:2025-03-14'},
+  slurm: {enabled: true, image: 'example/slurm:1.0',
+          existingMungeSecret: 'ondemand-munge'},
   networkPolicy: {nodeSubnetCIDR: '10.0.1.0/24',
                   nodeHostRegex: '10\.0\.1\.[0-9]{1,3}',
                   apiServerCIDRs: ['10.0.0.4/32']}
@@ -67,11 +69,30 @@ no_desktop_output, no_desktop_errors, no_desktop_status = run_helm('template', c
 raise no_desktop_errors unless no_desktop_status.success?
 raise 'Desktop app must stay disabled without desktopImage' if
   no_desktop_output.include?('portal-ondemand-desktop') || no_desktop_output.include?('OOD_DESKTOP_IMAGE')
+slurm_set = find.call('StatefulSet').find { |s| s['metadata']['name'] == 'portal-ondemand-slurm' }
+raise 'Slurm login cluster missing when enabled' unless slurm_set &&
+  find.call('ConfigMap').any? { |c| c.dig('data', 'slurm.conf')&.include?('NodeName=portal-ondemand-slurm-0') } &&
+  portal_config['data']['slurm-cluster.yml'].include?('host: portal-ondemand-slurm-0.portal-ondemand-slurm')
+portal_env = deployment['spec']['template']['spec']['containers'][0]['env']
+raise 'Shell must be enabled with Slurm' unless
+  portal_env.any? { |e| e['name'] == 'OOD_SHELL_ENABLED' && e['value'] == 'true' } &&
+  !portal_config['data']['dashboard-env'].include?('OOD_DISABLE_SHELL')
+no_slurm = Marshal.load(Marshal.dump(values))
+no_slurm[:slurm] = {enabled: false}
+no_slurm_output, no_slurm_errors, no_slurm_status = run_helm('template', chart, no_slurm)
+raise no_slurm_errors unless no_slurm_status.success?
+no_slurm_resources = YAML.load_stream(no_slurm_output).compact
+raise 'Slurm resources must stay disabled' if no_slurm_resources.any? { |r| r['kind'] == 'StatefulSet' }
+no_slurm_config = no_slurm_resources.find { |r| r['kind'] == 'ConfigMap' && r['data']['dashboard-env'] }
+raise 'Shell must stay disabled without Slurm' unless
+  no_slurm_config['data']['dashboard-env'].include?('OOD_DISABLE_SHELL=true') &&
+  no_slurm_config['data']['slurm-cluster.yml'].nil?
 
 required = [
   [:image, :repository], [:image, :tag], [:auth, :existingSecret],
   [:ingress, :host], [:ingress, :tlsSecret], [:nfs, :server], [:nfs, :path],
   [:apps, :jupyterImage], [:apps, :batchImage],
+  [:slurm, :image], [:slurm, :existingMungeSecret],
   [:networkPolicy, :nodeSubnetCIDR], [:networkPolicy, :nodeHostRegex],
   [:networkPolicy, :apiServerCIDRs]
 ]

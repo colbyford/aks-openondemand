@@ -109,6 +109,10 @@ az acr build --registry "${REGISTRY%%.*}" --image ondemand:0.1.0 \
 # Optional: demo desktop workload image for the Desktop app.
 az acr build --registry "${REGISTRY%%.*}" --image ondemand-desktop:0.1.0 \
   --file "$REPO/Dockerfile.desktop" "$REPO"
+
+# Optional: single-node demo Slurm cluster and SSH login host.
+az acr build --registry "${REGISTRY%%.*}" --image ondemand-slurm:0.1.0 \
+  --file "$REPO/Dockerfile.slurm" "$REPO"
 ```
 
 The image targets Linux amd64 by default; pass the appropriate `TARGETARCH`
@@ -263,14 +267,52 @@ hostname to the ingress IP and use a trusted certificate.
    annotation alone is not an enforced deadline. Completed workloads require
    the administrator cleanup described below.
 
-These are Kubernetes-native apps, not the standard Job Composer submission
-templates. Slurm directives, job arrays, scheduler dependencies, and SSH into
-worker nodes are not provided. The stock `bc_desktop` and Shell apps are
-removed from the portal image: no SSH-able login clusters exist here, and
+These Kubernetes-native interactive apps are separate from the optional Slurm
+workflow below. The stock `bc_desktop` app is removed from the portal image;
 Desktop sessions come from the chart's own app when `apps.desktopImage` is
-set. Add further application
+set. The web Shell app stays hidden unless the Slurm login cluster is enabled.
+Add further application
 templates under `charts/ondemand/files/apps`, with the matching ConfigMap
 mounts in `templates/apps.yaml` and `templates/deployment.yaml`.
+
+## Optional: Slurm jobs and the web shell
+
+The chart can run a self-contained single-node Slurm cluster to demonstrate
+scheduler workflows and the browser shell. Build the Slurm image (above) and
+create a munge key Secret **outside version control**:
+
+```bash
+MUNGE_FILE=$(mktemp /tmp/ondemand-munge.XXXXXX)
+dd if=/dev/urandom of="$MUNGE_FILE" bs=1024 count=1
+kubectl -n "$NS" create secret generic ondemand-munge \
+  --from-file="munge.key=$MUNGE_FILE"
+rm "$MUNGE_FILE"
+```
+
+Then add this to `deployment.local.yaml` and run the same `helm upgrade`:
+
+```yaml
+slurm:
+  enabled: true
+  image: ${REGISTRY}/ondemand-slurm:0.1.0
+  existingMungeSecret: ondemand-munge
+```
+
+This deploys a `slurmctld`/`slurmd`/`sshd` StatefulSet sharing the NFS home
+and adds to the portal:
+
+- **Clusters → Slurm Shell Access**: a browser terminal logged into the Slurm
+  node as `ondemand` (the portal generates an SSH keypair in the shared home).
+- **Jobs** and **Active Jobs** against the Slurm cluster: compose and submit
+  scripts with `#SBATCH` directives; `sinfo`, `sbatch`, and `squeue` also work
+  from the shell. Interactive `srun` works inside the Slurm shell session.
+
+Demo limitations: a single fixed-size node sized by `slurm.cpus` and
+`slurm.realMemoryMB`; queue state is lost when the Slurm pod restarts; there
+is no `slurmdbd`, so finished jobs leave `squeue` after an hour and `sacct`
+history is unavailable; `sshd`/`slurmd` run as root inside the pod under the
+baseline Pod Security profile; SSH host keys are ephemeral, so the portal
+disables known-hosts pinning for this one in-cluster hostname only.
 
 ## Verification and operations
 

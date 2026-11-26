@@ -1,0 +1,152 @@
+{{- if .Values.slurm.enabled }}
+{{- $node := printf "%s-slurm-0" (include "ondemand.fullname" .) }}
+{{- $service := printf "%s-slurm" (include "ondemand.fullname" .) }}
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "ondemand.fullname" . }}-slurm
+  namespace: {{ .Release.Namespace }}
+data:
+  slurm.conf: |
+    ClusterName=aks
+    SlurmctldHost={{ $node }}({{ $node }}.{{ $service }})
+    AuthType=auth/munge
+    SlurmUser=slurm
+    SlurmctldPidFile=/run/slurm/slurmctld.pid
+    SlurmdPidFile=/run/slurm/slurmd.pid
+    SlurmctldPort=6817
+    SlurmdPort=6818
+    StateSaveLocation=/var/spool/slurmctld
+    SlurmdSpoolDir=/var/spool/slurmd
+    # Container-friendly plugins: no cgroup access inside the pod.
+    ProctrackType=proctrack/linuxproc
+    TaskPlugin=task/none
+    JobAcctGatherType=jobacct_gather/none
+    SelectType=select/cons_tres
+    SelectTypeParameters=CR_Core_Memory
+    SchedulerType=sched/backfill
+    ReturnToService=2
+    # No slurmdbd: keep finished jobs visible to squeue for an hour.
+    MinJobAge=3600
+    MailProg=/bin/true
+    NodeName={{ $node }} CPUs={{ .Values.slurm.cpus }} RealMemory={{ .Values.slurm.realMemoryMB }} State=UNKNOWN
+    PartitionName=main Nodes=ALL Default=YES MaxTime=1-00:00:00 State=UP
+  cgroup.conf: |
+    # Pods expose no writable cgroup hierarchy or system dbus; Slurm 22.05 has
+    # no "disabled" value, so load the inert v1 plugin without automounting.
+    CgroupPlugin=cgroup/v1
+    CgroupAutomount=no
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ $service }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ondemand.labels" . | nindent 4 }}
+spec:
+  type: ClusterIP
+  clusterIP: None
+  # slurmd must resolve the controller's stable DNS name before it is ready.
+  publishNotReadyAddresses: true
+  selector:
+    {{- include "ondemand.selectorLabels" . | nindent 4 }}
+    ondemand-role: slurm
+  ports:
+    - name: ssh
+      port: 22
+    - name: slurmctld
+      port: 6817
+    - name: slurmd
+      port: 6818
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: {{ $service }}
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "ondemand.labels" . | nindent 4 }}
+spec:
+  serviceName: {{ $service }}
+  replicas: 1
+  selector:
+    matchLabels:
+      {{- include "ondemand.selectorLabels" . | nindent 6 }}
+      ondemand-role: slurm
+  template:
+    metadata:
+      labels:
+        {{- include "ondemand.selectorLabels" . | nindent 8 }}
+        ondemand-role: slurm
+      annotations:
+        checksum/slurm-config: {{ printf "%s%s" $node (toYaml .Values.slurm) | sha256sum }}
+    spec:
+      automountServiceAccountToken: false
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: slurm
+          image: {{ required "slurm.image is required when slurm.enabled" .Values.slurm.image | quote }}
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          # sshd and slurmd must run as root to open user sessions as ondemand.
+          securityContext:
+            privileged: false
+            allowPrivilegeEscalation: true
+          ports:
+            - name: ssh
+              containerPort: 22
+            - name: slurmctld
+              containerPort: 6817
+            - name: slurmd
+              containerPort: 6818
+          startupProbe:
+            tcpSocket:
+              port: slurmd
+            failureThreshold: 60
+            periodSeconds: 5
+          readinessProbe:
+            tcpSocket:
+              port: ssh
+          livenessProbe:
+            tcpSocket:
+              port: slurmd
+            initialDelaySeconds: 30
+          resources:
+            {{- toYaml .Values.slurm.resources | nindent 12 }}
+          volumeMounts:
+            - name: home
+              mountPath: /home/ondemand
+            - name: slurm-config
+              mountPath: /etc/slurm/slurm.conf
+              subPath: slurm.conf
+              readOnly: true
+            - name: slurm-config
+              mountPath: /etc/slurm/cgroup.conf
+              subPath: cgroup.conf
+              readOnly: true
+            - name: munge-key
+              mountPath: /etc/ood/munge.key
+              subPath: munge.key
+              readOnly: true
+      volumes:
+        - name: home
+          nfs:
+            server: {{ required "nfs.server is required" .Values.nfs.server | quote }}
+            path: {{ required "nfs.path is required" .Values.nfs.path | quote }}
+        - name: slurm-config
+          configMap:
+            name: {{ include "ondemand.fullname" . }}-slurm
+        - name: munge-key
+          secret:
+            secretName: {{ required "slurm.existingMungeSecret is required when slurm.enabled" .Values.slurm.existingMungeSecret }}
+            defaultMode: 0400
+            items:
+              - key: munge.key
+                path: munge.key
+{{- end }}

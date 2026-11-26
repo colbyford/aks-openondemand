@@ -52,22 +52,27 @@ def urlopen(request, **kwargs):
 environment = {
     "OOD_SESSION_ROOT": "/home/ondemand/session", "OOD_SECONDS": "3600",
     "OOD_INTERFACE": "lab", "OOD_TOKEN": "a" * 64,
+    "OOD_PORTAL_ORIGIN": "https://ood.example.org",
     "POD_NAMESPACE": "portal-ondemand-jobs-ondemand", "POD_NAME": "jupyter-abcd",
 }
 with mock.patch.dict(os.environ, environment), \
      mock.patch.object(pathlib.Path, "read_text", read_text), \
      mock.patch.object(pathlib.Path, "write_text", write_text), \
      mock.patch.object(pathlib.Path, "replace", replace), \
+     mock.patch.object(pathlib.Path, "mkdir", lambda *args, **kwargs: None), \
      mock.patch.object(ssl, "create_default_context", return_value=object()), \
      mock.patch.object(urllib.request, "urlopen", urlopen), \
      mock.patch.object(os, "execvp") as execute:
     exec(compile(source, "runner.sh/python", "exec"), {})
     execute.assert_called_once_with("jupyter", ["jupyter", "lab", "--config=/home/ondemand/session/jupyter.json"])
+    assert os.environ["JUPYTER_CONFIG_DIR"] == "/home/ondemand/session/jupyter-config"
+assert data["/home/ondemand/session/jupyter-config/labconfig/page_config.json"] == '{"token": ""}'
 configuration = json.loads(data["/home/ondemand/session/jupyter.json"])
 assert configuration["ServerApp"]["base_url"] == "/node/10.0.1.5/30001/"
 assert configuration["ServerApp"]["port"] == 8888
 assert configuration["IdentityProvider"]["token"] == "a" * 64
 assert configuration["ServerApp"]["allow_remote_access"]
+assert configuration["ServerApp"]["allow_origin"] == "https://ood.example.org"
 assert "disable_check_xsrf" not in configuration["ServerApp"]
 assert calls[1].endswith("/services/jupyter-abcd-service")
 assert calls[2].endswith("/secrets")

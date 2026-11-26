@@ -37,6 +37,25 @@ apps:
   # providing vnc_lite.html, and an X session such as Xfce (startxfce4); the
   # repository's Dockerfile.desktop builds a working example.
   desktopImage: ""
+# Optional single-node demo Slurm cluster with an SSH login host. Enabling it
+# adds the Slurm cluster to the dashboard's job apps and the web Shell Access
+# menu. Build slurm.image from the repository's Dockerfile.slurm.
+slurm:
+  enabled: false
+  image: ""
+  # Secret holding key "munge.key" (1024 random bytes), shared by the portal
+  # and the Slurm node. Create it outside version control.
+  existingMungeSecret: ""
+  # Advertised node size; keep at or below the container resources below.
+  cpus: 2
+  realMemoryMB: 2000
+  resources:
+    requests:
+      cpu: 500m
+      memory: 1Gi
+    limits:
+      cpu: "2"
+      memory: 3Gi
 jobs:
   quota:
     requests.cpu: "8"

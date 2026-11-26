@@ -9,6 +9,7 @@ RUN dnf -y install https://yum.osc.edu/ondemand/4.0/ondemand-release-web-4.0-1.e
     && dnf -y module enable ruby:3.3 nodejs:20 \
     && dnf -y update \
     && dnf -y install ondemand curl-minimal ca-certificates \
+       slurm munge openssh-clients \
     && dnf clean all \
     && rm -rf /var/cache/dnf
 
@@ -23,13 +24,17 @@ RUN test -n "${KUBECTL_VERSION}" \
     && chmod 0755 /usr/local/bin/kubectl \
     && rm /tmp/kubectl.sha256
 
-# The stock Desktop and Shell apps are removed: no SSH-able login clusters
-# exist here, and the chart ships its own Kubernetes-native apps.
+# The stock Desktop app has no cluster here; the chart ships its own apps.
+# The Shell app stays installed; the entrypoint removes it unless the chart
+# enables the Slurm login cluster.
 RUN groupadd --gid 1000 ondemand \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ondemand \
+    && groupadd --system slurm \
+    && useradd --system --gid slurm --home-dir /var/spool/slurm \
+       --shell /sbin/nologin slurm \
     && mkdir -p /etc/ood/auth /var/run/ondemand-nginx /var/log/ondemand-nginx \
     && rm -f /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/welcome.conf \
-    && rm -rf /var/www/ood/apps/sys/bc_desktop /var/www/ood/apps/sys/shell
+    && rm -rf /var/www/ood/apps/sys/bc_desktop
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh

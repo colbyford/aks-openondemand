@@ -11,6 +11,8 @@ root = staged_root.to_s
 raise 'Invalid session path' unless root.match?(%r{\A/home/ondemand/[A-Za-z0-9_./-]+\z}) && !root.split('/').include?('..')
 image = ENV.fetch('OOD_JUPYTER_IMAGE')
 raise 'Invalid runtime image' unless image.match?(%r{\A[a-zA-Z0-9][a-zA-Z0-9._/:@-]+\z})
+origin = ENV.fetch('OOD_PORTAL_ORIGIN')
+raise 'Invalid portal origin' unless origin.match?(%r{\Ahttps://[A-Za-z0-9.-]+(?::\d{1,5})?\z})
 FileUtils.mkdir_p(root, mode: 0700)
 token = SecureRandom.hex(32)
 File.open(File.join(root, 'token'), File::WRONLY | File::CREAT | File::TRUNC, 0600) { |f| f.write(token) }
@@ -28,7 +30,8 @@ options = {
         'startup_probe' => { 'failure_threshold' => 60, 'period_seconds' => 5 },
         'env' => {
           'HOME' => '/home/ondemand', 'OOD_SESSION_ROOT' => root,
-          'OOD_TOKEN' => token, 'OOD_INTERFACE' => mode, 'OOD_SECONDS' => seconds.to_s
+          'OOD_TOKEN' => token, 'OOD_INTERFACE' => mode, 'OOD_SECONDS' => seconds.to_s,
+          'OOD_PORTAL_ORIGIN' => origin
         }
       },
       'configmap' => { 'files' => [{

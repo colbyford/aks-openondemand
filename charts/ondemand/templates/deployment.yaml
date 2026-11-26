@@ -20,6 +20,9 @@ spec:
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
         checksum/apps: {{ include (print $.Template.BasePath "/apps.yaml") . | sha256sum }}
+        {{- if .Values.slurm.enabled }}
+        checksum/slurm: {{ include (print $.Template.BasePath "/slurm.yaml") . | sha256sum }}
+        {{- end }}
     spec:
       serviceAccountName: {{ include "ondemand.serviceAccountName" . }}
       automountServiceAccountToken: false
@@ -52,6 +55,12 @@ spec:
             {{- with .Values.apps.desktopImage }}
             - name: OOD_DESKTOP_IMAGE
               value: {{ . | quote }}
+            {{- end }}
+            {{- if .Values.slurm.enabled }}
+            - name: OOD_SHELL_ENABLED
+              value: "true"
+            - name: OOD_LOGIN_HOST
+              value: {{ printf "%s-slurm-0.%s-slurm" (include "ondemand.fullname" .) (include "ondemand.fullname" .) | quote }}
             {{- end }}
           startupProbe:
             tcpSocket:
@@ -89,6 +98,20 @@ spec:
               mountPath: /etc/ood/config/apps/dashboard/env
               subPath: dashboard-env
               readOnly: true
+            {{- if .Values.slurm.enabled }}
+            - name: config
+              mountPath: /etc/ood/config/clusters.d/slurm.yml
+              subPath: slurm-cluster.yml
+              readOnly: true
+            - name: slurm-config
+              mountPath: /etc/slurm/slurm.conf
+              subPath: slurm.conf
+              readOnly: true
+            - name: munge-key
+              mountPath: /etc/ood/munge.key
+              subPath: munge.key
+              readOnly: true
+            {{- end }}
             - name: api-token
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
@@ -113,6 +136,18 @@ spec:
         - name: config
           configMap:
             name: {{ include "ondemand.fullname" . }}-config
+        {{- if .Values.slurm.enabled }}
+        - name: slurm-config
+          configMap:
+            name: {{ include "ondemand.fullname" . }}-slurm
+        - name: munge-key
+          secret:
+            secretName: {{ required "slurm.existingMungeSecret is required when slurm.enabled" .Values.slurm.existingMungeSecret }}
+            defaultMode: 0400
+            items:
+              - key: munge.key
+                path: munge.key
+        {{- end }}
         - name: api-token
           projected:
             # ondemand (1000) must read this token from its unprivileged PUN.

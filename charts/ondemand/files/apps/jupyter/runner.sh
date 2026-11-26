@@ -7,6 +7,7 @@ import ipaddress
 import json
 import os
 import pathlib
+import re
 import ssl
 import time
 import urllib.error
@@ -73,16 +74,28 @@ if mode not in ("lab", "notebook"):
     raise ValueError("Invalid interface")
 interface_path = "tree" if mode == "notebook" else "lab"
 create_connection_secret(host, port, token, interface_path)
+# Proxied write requests carry the portal's Origin while Host stays the
+# NodePort endpoint; pin the exact portal origin so Jupyter accepts them.
+origin = os.environ["OOD_PORTAL_ORIGIN"]
+if not re.fullmatch(r"https://[A-Za-z0-9.-]+(?::\d{1,5})?", origin):
+    raise ValueError("Invalid portal origin")
 configuration = {
     "ServerApp": {
         "ip": "0.0.0.0", "port": 8888, "port_retries": 0,
         "open_browser": False, "base_url": base,
         "root_dir": "/home/ondemand", "allow_remote_access": True,
-        "trust_xheaders": True
+        "trust_xheaders": True, "allow_origin": origin
     },
     "IdentityProvider": {"token": token}
 }
 config = root / "jupyter.json"
 config.write_text(json.dumps(configuration))
+# Keep the API token out of the served page config: if JupyterLab sets its own
+# Authorization header, browsers drop the portal's Basic credentials and the
+# Apache proxy rejects every API call. Lab then authenticates by cookie.
+labconfig = root / "jupyter-config" / "labconfig"
+labconfig.mkdir(parents=True, exist_ok=True)
+(labconfig / "page_config.json").write_text('{"token": ""}')
+os.environ["JUPYTER_CONFIG_DIR"] = str(root / "jupyter-config")
 os.execvp("jupyter", ["jupyter", mode, "--config=" + str(config)])
 PY
