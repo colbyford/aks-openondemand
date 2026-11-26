@@ -245,7 +245,10 @@ hostname to the ingress IP and use a trusted certificate.
 1. Open **Interactive Apps → Jupyter**, choose JupyterLab or Notebook, CPU,
    memory, and duration, and launch. In **My Interactive Sessions**, wait for
    the session to run, then connect. Each session has a random token in addition
-   to portal authentication; XSRF protection remains enabled.
+   to portal authentication; XSRF protection remains enabled. If the cluster
+   autoscaler must first add a node, the card can briefly show **Held** with a
+   "bad state" warning while the pod is unschedulable; it returns to Running on
+   its own once the node is ready — refresh the page.
 2. Use **Files** to create/upload a `.sh` file in your home directory, e.g.
    `scripts/hello.sh`, containing `echo "Hello from AKS"; date`.
 3. Open the **Batch** interactive application and submit that relative path.
