@@ -1,4 +1,4 @@
-{{- range $app := list "jupyter" "batch" }}
+{{- range $app := splitList " " (include "ondemand.appNames" .) }}
 ---
 apiVersion: v1
 kind: ConfigMap

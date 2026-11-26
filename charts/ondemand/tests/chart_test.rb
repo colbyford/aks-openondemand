@@ -9,7 +9,8 @@ values = {
   ingress: {host: 'ood.example.org', tlsSecret: 'portal-tls'},
   nfs: {server: '10.0.2.4', path: '/export'},
   apps: {jupyterImage: 'quay.io/jupyter/base-notebook:2025-03-14',
-         batchImage: 'quay.io/jupyter/base-notebook:2025-03-14'},
+         batchImage: 'quay.io/jupyter/base-notebook:2025-03-14',
+         desktopImage: 'docker.io/example/xfce-novnc:2025-03-14'},
   networkPolicy: {nodeSubnetCIDR: '10.0.1.0/24',
                   nodeHostRegex: '10\.0\.1\.[0-9]{1,3}',
                   apiServerCIDRs: ['10.0.0.4/32']}
@@ -57,6 +58,15 @@ raise 'Unexpected user map command' unless ood['user_map_match'] == '^ondemand$'
                                            ood['user_map_cmd'].nil?
 raise 'Anchored nested URL regex' if ood['host_regex'].match?(/[\^$]/)
 raise 'Missing kubeconfig seed' unless deployment['spec']['template']['spec']['containers'][0]['volumeMounts'].any? { |m| m['mountPath'] == '/etc/ood/kubeconfig.template' }
+raise 'Desktop app missing when desktopImage is set' unless
+  find.call('ConfigMap').any? { |c| c['metadata']['name'] == 'portal-ondemand-desktop' } &&
+  deployment['spec']['template']['spec']['containers'][0]['env'].any? { |e| e['name'] == 'OOD_DESKTOP_IMAGE' }
+no_desktop = Marshal.load(Marshal.dump(values))
+no_desktop[:apps][:desktopImage] = ''
+no_desktop_output, no_desktop_errors, no_desktop_status = run_helm('template', chart, no_desktop)
+raise no_desktop_errors unless no_desktop_status.success?
+raise 'Desktop app must stay disabled without desktopImage' if
+  no_desktop_output.include?('portal-ondemand-desktop') || no_desktop_output.include?('OOD_DESKTOP_IMAGE')
 
 required = [
   [:image, :repository], [:image, :tag], [:auth, :existingSecret],

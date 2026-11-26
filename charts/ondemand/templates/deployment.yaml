@@ -49,6 +49,10 @@ spec:
               value: {{ required "apps.jupyterImage is required" .Values.apps.jupyterImage | quote }}
             - name: OOD_BATCH_IMAGE
               value: {{ required "apps.batchImage is required" .Values.apps.batchImage | quote }}
+            {{- with .Values.apps.desktopImage }}
+            - name: OOD_DESKTOP_IMAGE
+              value: {{ . | quote }}
+            {{- end }}
           startupProbe:
             tcpSocket:
               port: http
@@ -88,7 +92,7 @@ spec:
             - name: api-token
               mountPath: /var/run/secrets/kubernetes.io/serviceaccount
               readOnly: true
-            {{- range $app := list "jupyter" "batch" }}
+            {{- range $app := splitList " " (include "ondemand.appNames" $) }}
             - name: {{ $app }}-app
               mountPath: /var/www/ood/apps/sys/{{ $app }}
               readOnly: true
@@ -127,7 +131,7 @@ spec:
                     - path: namespace
                       fieldRef:
                         fieldPath: metadata.namespace
-        {{- range $app := list "jupyter" "batch" }}
+        {{- range $app := splitList " " (include "ondemand.appNames" $) }}
         - name: {{ $app }}-app
           configMap:
             name: {{ include "ondemand.fullname" $ }}-{{ $app }}

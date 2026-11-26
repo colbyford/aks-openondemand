@@ -74,8 +74,9 @@ begin
   FileUtils.mkdir_p("#{WORK}/home/scripts")
   File.write("#{WORK}/home/scripts/example.sh", "echo hello\n")
   ENV['OOD_JUPYTER_IMAGE'] = ENV['OOD_BATCH_IMAGE'] = 'quay.io/jupyter/base-notebook:2025-03-14'
+  ENV['OOD_DESKTOP_IMAGE'] = 'docker.io/example/xfce-novnc:2025-03-14'
   ENV['OOD_NODE_HOST_REGEX'] = '10\.0\.1\.[0-9]{1,3}'
-  %w[jupyter batch].each do |app|
+  %w[jupyter batch desktop].each do |app|
     YAML.safe_load(ERB.new(File.read("#{CHART}/files/apps/#{app}/form.yml.erb")).result)
     YAML.safe_load(File.read("#{CHART}/files/apps/#{app}/manifest.yml"))
     options = submit(app, cpu: '99', memory: '-1', hours: '99')
@@ -114,7 +115,28 @@ begin
   view = ERB.new(File.read("#{CHART}/files/apps/jupyter/view.html.erb"))
             .result(connect.instance_eval { binding })
   check(view.include?('initializing'), 'View readiness race')
-  puts 'PASS: forms, native YAML, clamps, invalid inputs, symlink escape, tokens and Notebook view'
+  desktop = submit('desktop')
+  check(desktop['script']['native']['container']['env']['OOD_PASSWORD'].match?(/\A[A-Za-z0-9]{8}\z/), 'Weak VNC password')
+  check(desktop['script']['native']['container']['port'] == 8888, 'Desktop must target the allowed workload port')
+  check((File.stat("#{WORK}/home/sessions/test/password").mode & 0777) == 0600, 'Password permissions')
+  connect = OpenStruct.new(host_ip: '10.0.1.5', node_port: 30001, password: 'Abcd1234')
+  view = ERB.new(File.read("#{CHART}/files/apps/desktop/view.html.erb"))
+            .result(connect.instance_eval { binding })
+  check(view.include?('/node/10.0.1.5/30001/vnc_lite.html'), 'Desktop view URL mismatch')
+  check(view.include?('path=node%2F10.0.1.5%2F30001%2Fwebsockify'), 'Desktop websocket path mismatch')
+  connect = OpenStruct.new(host_ip: '10.0.1.5', node_port: 30001, password: 'bad"word')
+  begin
+    ERB.new(File.read("#{CHART}/files/apps/desktop/view.html.erb"))
+       .result(connect.instance_eval { binding })
+    raise 'Accepted invalid VNC password'
+  rescue RuntimeError => error
+    raise error if error.message == 'Accepted invalid VNC password'
+  end
+  connect = OpenStruct.new(host_ip: '10.0.1.5')
+  view = ERB.new(File.read("#{CHART}/files/apps/desktop/view.html.erb"))
+            .result(connect.instance_eval { binding })
+  check(view.include?('initializing'), 'Desktop view readiness race')
+  puts 'PASS: forms, native YAML, clamps, invalid inputs, symlink escape, tokens, Notebook and Desktop views'
 ensure
   FileUtils.rm_rf(WORK)
 end

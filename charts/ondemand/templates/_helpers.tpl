@@ -60,3 +60,14 @@ Create the name of the service account to use
 {{- define "ondemand.jobsNamespace" -}}
 {{- printf "%s-jobs-ondemand" (include "ondemand.fullname" .) }}
 {{- end }}
+
+{{/*
+Workload app directories to ship; the Desktop app is only enabled when its image is set.
+*/}}
+{{- define "ondemand.appNames" -}}
+{{- $apps := list "jupyter" "batch" -}}
+{{- if .Values.apps.desktopImage -}}
+{{- $apps = append $apps "desktop" -}}
+{{- end -}}
+{{- join " " $apps -}}
+{{- end }}

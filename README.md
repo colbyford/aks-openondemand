@@ -105,6 +105,10 @@ export KUBECTL_VERSION=$(kubectl version --output=json | \
 
 az acr build --registry "${REGISTRY%%.*}" --image ondemand:0.1.0 \
   --build-arg "KUBECTL_VERSION=$KUBECTL_VERSION" "$REPO"
+
+# Optional: demo desktop workload image for the Desktop app.
+az acr build --registry "${REGISTRY%%.*}" --image ondemand-desktop:0.1.0 \
+  --file "$REPO/Dockerfile.desktop" "$REPO"
 ```
 
 The image targets Linux amd64 by default; pass the appropriate `TARGETARCH`
@@ -112,8 +116,12 @@ when building for another architecture. Rebuild regularly for OS/Open OnDemand
 security updates. Use reviewed, versioned workload images with `bash`,
 `timeout`, and Python 3; the Jupyter image must also contain Jupyter Server 2,
 JupyterLab, and Notebook 7. For example, choose a reviewed version of
-`quay.io/jupyter/base-notebook` for both apps. Do not use an unpinned `latest`
-tag in production.
+`quay.io/jupyter/base-notebook` for both apps — an existing dated tag such as
+`2026-11-23`, not an unpinned `latest` tag or this chart's own version number.
+The optional Desktop app additionally needs an image with TigerVNC (`Xvnc` and
+`vncpasswd`), `websockify`, a noVNC web root providing `vnc_lite.html`, and an
+X session such as Xfce (`startxfce4`), all runnable as an unprivileged user;
+`Dockerfile.desktop` builds a working example.
 
 ## Configure authentication, TLS, and networking
 
@@ -164,10 +172,11 @@ is insufficient. Keep the AKS NodePort range (normally 30000–32767) private;
 the portal must reach it within the node subnet. NodePort SNAT can change the
 source address to a node IP, hence the explicit subnet allowance.
 
-Create a local values file, substituting a reviewed workload image:
+Create a local values file, substituting a reviewed workload image (an
+existing dated `quay.io/jupyter/base-notebook` tag, not this chart's version):
 
 ```bash
-export WORKLOAD_IMAGE=quay.io/jupyter/base-notebook:YOUR_REVIEWED_TAG
+export WORKLOAD_IMAGE=quay.io/jupyter/base-notebook:2026-11-23
 cat > "$REPO/deployment.local.yaml" <<EOF
 image:
   repository: ${REGISTRY}/ondemand
@@ -184,6 +193,8 @@ nfs:
 apps:
   jupyterImage: ${WORKLOAD_IMAGE}
   batchImage: ${WORKLOAD_IMAGE}
+  # Omit desktopImage to hide the Desktop app.
+  desktopImage: ${REGISTRY}/ondemand-desktop:0.1.0
 networkPolicy:
   nodeSubnetCIDR: 10.20.0.0/20
   nodeHostRegex: '10\.20\.(?:[0-9]|1[0-5])\.[0-9]{1,3}'
@@ -240,14 +251,21 @@ hostname to the ingress IP and use a trusted certificate.
 3. Open the **Batch** interactive application and submit that relative path.
    The app launches a non-interactive Pod and writes `output.log` and its exit
    status in the session's output directory on NFS. View these through Files.
-4. Use the session's delete/cancel action to stop an active workload. App
+4. With `apps.desktopImage` configured, open **Interactive Apps → Desktop** to
+   launch a graphical Linux desktop. The pod runs a loopback-only VNC server
+   protected by a random per-session password; only the noVNC/websockify
+   endpoint is reachable, through the same authenticated `/node/` proxy.
+5. Use the session's delete/cancel action to stop an active workload. App
    execution is limited to the requested duration; the adapter's wall-time
    annotation alone is not an enforced deadline. Completed workloads require
    the administrator cleanup described below.
 
 These are Kubernetes-native apps, not the standard Job Composer submission
-templates. Slurm directives, job arrays, scheduler dependencies, SSH into
-worker nodes, and desktop/VNC sessions are not provided. Add further application
+templates. Slurm directives, job arrays, scheduler dependencies, and SSH into
+worker nodes are not provided. The stock `bc_desktop` and Shell apps are
+removed from the portal image: no SSH-able login clusters exist here, and
+Desktop sessions come from the chart's own app when `apps.desktopImage` is
+set. Add further application
 templates under `charts/ondemand/files/apps`, with the matching ConfigMap
 mounts in `templates/apps.yaml` and `templates/deployment.yaml`.
 
@@ -256,7 +274,8 @@ mounts in `templates/apps.yaml` and `templates/deployment.yaml`.
 After installation, check an unauthenticated HTTPS request is denied or
 challenges for authentication, then log in and exercise **both** Jupyter modes
 (including kernel execution and WebSockets), a successful batch script, a
-failing script, cancellation, and the configured duration limit. Confirm files persist after
+failing script, a Desktop session if `apps.desktopImage` is configured,
+cancellation, and the configured duration limit. Confirm files persist after
 a portal restart. In the workload namespace, check Pods run as UID/GID 1000,
 privileged/hostPath/other-user NFS mounts are rejected, quotas apply, and the
 default service account cannot create Pods or read Secrets.
@@ -295,9 +314,10 @@ kubectl -n "$JOBS_NS" delete pod,service,configmap,secret \
 
 The portal credential can manage workloads only in its workload namespace.
 Workloads receive a limited credential to get Pods and Services and create
-Secrets; they cannot get or list Secrets or create Pods. The Jupyter runner
-uses the create permission for its per-session connection Secret, which the
-portal adapter reads to render the authenticated connection button. Neither
+Secrets; they cannot get or list Secrets or create Pods. The Jupyter and
+Desktop runners use the create permission for their per-session connection
+Secret, which the portal adapter reads to render the authenticated connection
+button. Neither
 credential has cluster-admin permissions. Network policies limit workload
 egress to DNS, the specified API endpoint, and public IPv4 destinations; add
 narrowly scoped rules if your jobs need private data services.

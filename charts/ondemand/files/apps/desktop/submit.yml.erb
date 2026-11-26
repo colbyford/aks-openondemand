@@ -1,0 +1,41 @@
+<%
+require 'yaml'
+require 'securerandom'
+require 'fileutils'
+cores = [[Integer(cpu.to_s, 10), 1].max, 4].min
+gib = [[Integer(memory.to_s, 10), 1].max, 8].min
+seconds = [[Integer(hours.to_s, 10), 1].max, 24].min * 3600
+root = staged_root.to_s
+raise 'Invalid session path' unless root.match?(%r{\A/home/ondemand/[A-Za-z0-9_./-]+\z}) && !root.split('/').include?('..')
+image = ENV.fetch('OOD_DESKTOP_IMAGE')
+raise 'Invalid runtime image' unless image.match?(%r{\A[a-zA-Z0-9][a-zA-Z0-9._/:@-]+\z})
+FileUtils.mkdir_p(root, mode: 0700)
+# Classic VNC authentication only honors the first eight password characters.
+password = SecureRandom.alphanumeric(8)
+File.open(File.join(root, 'password'), File::WRONLY | File::CREAT | File::TRUNC, 0600) { |f| f.write(password) }
+options = {
+  'batch_connect' => { 'template' => 'basic' },
+  'script' => {
+    'wall_time' => seconds,
+    'native' => {
+      'container' => {
+        'name' => 'desktop', 'image' => image,
+        'command' => ['bash', '/ood/runner.sh'],
+        'working_dir' => '/home/ondemand',
+        'restart_policy' => 'Never',
+        'port' => 8888, 'cpu' => cores.to_s, 'memory' => "#{gib}Gi",
+        'startup_probe' => { 'failure_threshold' => 60, 'period_seconds' => 5 },
+        'env' => {
+          'HOME' => '/home/ondemand', 'OOD_SESSION_ROOT' => root,
+          'OOD_PASSWORD' => password, 'OOD_SECONDS' => seconds.to_s
+        }
+      },
+      'configmap' => { 'files' => [{
+        'filename' => 'runner.sh',
+        'data' => File.read('/var/www/ood/apps/sys/desktop/runner.sh'),
+        'mount_path' => '/ood/runner.sh', 'sub_path' => 'runner.sh'
+      }] }
+    }
+  }
+}
+%><%= YAML.dump(options) %>

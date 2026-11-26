@@ -73,6 +73,48 @@ assert calls[1].endswith("/services/jupyter-abcd-service")
 assert calls[2].endswith("/secrets")
 print("PASS: Kubernetes discovery, connection Secret, NodePort base URL and strong token")
 
+desktop_source = (chart / "files/apps/desktop/runner.sh").read_text().split("<<'PY'\n", 1)[1].rsplit("\nPY", 1)[0]
+compile(desktop_source, "desktop-runner.sh/python", "exec")
+responses = [
+    {"status": {"hostIP": "10.0.1.5"}},
+    {"spec": {"ports": [{"nodePort": 30002}]}},
+]
+calls = []
+
+def desktop_urlopen(request, **kwargs):
+    assert request.get_header("Authorization") == "Bearer " + read_text(pathlib.Path("token"))
+    assert kwargs["timeout"] == 10
+    calls.append(request.full_url)
+    response = mock.MagicMock()
+    if request.get_method() == "POST":
+        secret = json.loads(request.data)
+        assert request.full_url.endswith("/secrets")
+        assert secret["metadata"]["name"] == "desktop-abcd-secret"
+        assert secret["stringData"] == {
+            "host_ip": "10.0.1.5", "node_port": "30002", "password": "Abcd1234",
+        }
+        response.__enter__.return_value.read.return_value = b"{}"
+    else:
+        response.__enter__.return_value.read.return_value = json.dumps(responses.pop(0)).encode()
+    return response
+
+environment = {
+    "OOD_SESSION_ROOT": "/home/ondemand/session", "OOD_SECONDS": "3600",
+    "OOD_PASSWORD": "Abcd1234",
+    "POD_NAMESPACE": "portal-ondemand-jobs-ondemand", "POD_NAME": "desktop-abcd",
+}
+with mock.patch.dict(os.environ, environment), \
+     mock.patch.object(pathlib.Path, "read_text", read_text), \
+     mock.patch.object(pathlib.Path, "write_text", write_text), \
+     mock.patch.object(ssl, "create_default_context", return_value=object()), \
+     mock.patch.object(urllib.request, "urlopen", desktop_urlopen):
+    exec(compile(desktop_source, "desktop-runner.sh/python", "exec"), {})
+assert calls[1].endswith("/services/desktop-abcd-service")
+assert calls[2].endswith("/secrets")
+assert data["/home/ondemand/session/host_ip"] == "10.0.1.5"
+assert data["/home/ondemand/session/node_port"] == "30002"
+print("PASS: desktop Kubernetes discovery, connection Secret with VNC password and proxied endpoint files")
+
 work = pathlib.Path(tempfile.mkdtemp(prefix="ondemand-runner-", dir="/tmp"))
 try:
     home = work / "home"

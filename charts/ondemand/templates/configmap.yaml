@@ -49,6 +49,9 @@ data:
   dashboard-env: |
     OOD_JUPYTER_IMAGE={{ required "apps.jupyterImage is required" .Values.apps.jupyterImage }}
     OOD_BATCH_IMAGE={{ required "apps.batchImage is required" .Values.apps.batchImage }}
+    {{- with .Values.apps.desktopImage }}
+    OOD_DESKTOP_IMAGE={{ . }}
+    {{- end }}
     OOD_JOBS_NAMESPACE={{ include "ondemand.jobsNamespace" . }}
     OOD_NODE_HOST_REGEX={{ .Values.networkPolicy.nodeHostRegex }}
     OOD_DISABLE_SHELL=true

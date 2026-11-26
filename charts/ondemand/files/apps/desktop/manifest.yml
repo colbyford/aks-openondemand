@@ -1,0 +1,6 @@
+---
+name: Desktop
+category: Interactive Apps
+subcategory: Desktops
+role: batch_connect
+description: Linux desktop over noVNC on AKS, running as ondemand.

@@ -1,0 +1,20 @@
+<%
+require 'ipaddr'
+require 'cgi'
+%>
+<% if !connect.host_ip || !connect.node_port || !connect.password %>
+<p>The desktop is initializing. Refresh this session card shortly.</p>
+<% else %>
+<%
+host_ip = IPAddr.new(connect.host_ip.to_s).to_s
+allowed_host = Regexp.new("\\A(?:#{ENV.fetch('OOD_NODE_HOST_REGEX')})\\z")
+raise 'Unexpected node address' unless allowed_host.match?(host_ip)
+node_port = Integer(connect.node_port.to_s, 10)
+raise 'Invalid NodePort' unless (1..65535).cover?(node_port)
+password = connect.password.to_s
+raise 'Invalid session password' unless password.match?(/\A[A-Za-z0-9]{8}\z/)
+path = "node/#{host_ip}/#{node_port}/websockify"
+url = "/node/#{host_ip}/#{node_port}/vnc_lite.html?path=#{CGI.escape(path)}&scale=true&password=#{password}"
+%>
+<a class="btn btn-primary" href="<%= CGI.escapeHTML(url) %>" target="_blank" rel="noopener noreferrer">Connect to Desktop</a>
+<% end %>

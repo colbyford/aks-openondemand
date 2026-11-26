@@ -23,10 +23,13 @@ RUN test -n "${KUBECTL_VERSION}" \
     && chmod 0755 /usr/local/bin/kubectl \
     && rm /tmp/kubectl.sha256
 
+# The stock Desktop and Shell apps are removed: no SSH-able login clusters
+# exist here, and the chart ships its own Kubernetes-native apps.
 RUN groupadd --gid 1000 ondemand \
     && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ondemand \
     && mkdir -p /etc/ood/auth /var/run/ondemand-nginx /var/log/ondemand-nginx \
-    && rm -f /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/welcome.conf
+    && rm -f /etc/httpd/conf.d/ssl.conf /etc/httpd/conf.d/welcome.conf \
+    && rm -rf /var/www/ood/apps/sys/bc_desktop /var/www/ood/apps/sys/shell
 
 COPY container/entrypoint.sh /usr/local/bin/entrypoint.sh
 RUN chmod 0755 /usr/local/bin/entrypoint.sh

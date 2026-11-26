@@ -1,0 +1,20 @@
+FROM rockylinux/rockylinux:9
+
+# Demo workload image for the chart's Desktop app: TigerVNC + Xfce + noVNC.
+# The Desktop runner starts Xvnc (loopback-only), startxfce4 and websockify;
+# it needs Xvnc, vncpasswd, websockify, a noVNC web root with vnc_lite.html,
+# bash, coreutils timeout and Python 3, all runnable as an unprivileged user.
+RUN dnf -y install epel-release dnf-utils \
+    && dnf config-manager --set-enabled crb \
+    && dnf -y update \
+    && dnf -y install \
+       tigervnc-server-minimal novnc python3-websockify \
+       xfce4-session xfce4-panel xfwm4 xfdesktop xfce4-settings xfce4-terminal \
+       dbus-x11 xkbcomp xkeyboard-config dejavu-sans-fonts xterm \
+       bash python3 \
+    && dnf clean all \
+    && rm -rf /var/cache/dnf
+
+# Workload pods run as UID/GID 1000; dbus and Xfce need a passwd entry for it.
+RUN groupadd --gid 1000 ondemand \
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ondemand

@@ -28,10 +28,15 @@ resources:
     cpu: "2"
     memory: 4Gi
 apps:
-  # Both runtime images must contain bash, coreutils timeout and Python3.
+  # All runtime images must contain bash, coreutils timeout and Python3.
   # Jupyter additionally needs JupyterLab and Notebook (Jupyter Server 2).
   jupyterImage: ""
   batchImage: ""
+  # Optional: setting this enables the Desktop interactive app. The image must
+  # also contain TigerVNC's Xvnc and vncpasswd, websockify, a noVNC web root
+  # providing vnc_lite.html, and an X session such as Xfce (startxfce4); the
+  # repository's Dockerfile.desktop builds a working example.
+  desktopImage: ""
 jobs:
   quota:
     requests.cpu: "8"
