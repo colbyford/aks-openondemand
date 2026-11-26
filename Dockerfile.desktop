@@ -16,5 +16,7 @@ RUN dnf -y install epel-release dnf-utils \
     && rm -rf /var/cache/dnf
 
 # Workload pods run as UID/GID 1000; dbus and Xfce need a passwd entry for it.
+# PolicyKit cannot work in an unprivileged pod; drop its autostart dialog.
 RUN groupadd --gid 1000 ondemand \
-    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ondemand
+    && useradd --uid 1000 --gid 1000 --create-home --shell /bin/bash ondemand \
+    && rm -f /etc/xdg/autostart/xfce-polkit.desktop
