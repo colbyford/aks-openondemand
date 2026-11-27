@@ -59,6 +59,8 @@ raise 'Upstream TLS rewrite loop' unless ood['ssl'].nil? && ood['use_rewrites'] 
 raise 'Unexpected user map command' unless ood['user_map_match'] == '^ondemand$' &&
                                            ood['user_map_cmd'].nil?
 raise 'Anchored nested URL regex' if ood['host_regex'].match?(/[\^$]/)
+aks_cluster = YAML.safe_load(portal_config['data']['aks.yml'])
+raise 'Kubernetes cluster must stay hidden from job apps' unless aks_cluster.dig('v2', 'metadata', 'hidden') == true
 raise 'Missing kubeconfig seed' unless deployment['spec']['template']['spec']['containers'][0]['volumeMounts'].any? { |m| m['mountPath'] == '/etc/ood/kubeconfig.template' }
 raise 'Desktop app missing when desktopImage is set' unless
   find.call('ConfigMap').any? { |c| c['metadata']['name'] == 'portal-ondemand-desktop' } &&

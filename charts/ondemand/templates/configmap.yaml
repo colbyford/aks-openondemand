@@ -22,6 +22,9 @@ data:
     v2:
       metadata:
         title: AKS workloads
+        # The Kubernetes adapter only runs this chart's container apps; plain
+        # Job Composer scripts carry no pod spec, so hide it from job apps.
+        hidden: true
       job:
         adapter: kubernetes
         bin: /usr/local/bin/kubectl
