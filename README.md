@@ -6,6 +6,8 @@ Deploy [Open OnDemand](https://openondemand.org/) on Azure Kubernetes Service
 (AKS), and use its UI to launch JupyterLab, Jupyter Notebook, and shell-script
 batch workloads.
 
+- Blog Post: https://blog.colbyford.com/running-open-ondemand-on-azure-kubernetes-service-8798ab1e5d14
+
 ## Architecture and scope
 
 - `infra/main.bicep` provisions Linux AKS with Azure CNI/network policies,
