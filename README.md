@@ -1,4 +1,4 @@
-# aks-openondemand
+# Open OnDemand on Azure Kubernetes Service
 
 <h3 align="right">Colby T. Ford, Ph.D.</h3>
 
