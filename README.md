@@ -65,7 +65,7 @@ az deployment group create --name ondemand --resource-group "$RG" \
   --parameters clusterName="$AKS" nodeMinCount=1 nodeMaxCount=3
 az aks get-credentials --resource-group "$RG" --name "$AKS"
 
-# Install the managed ingress controller and wait for its public IP.
+## Install the managed ingress controller and wait for its public IP.
 az aks approuting enable --resource-group "$RG" --name "$AKS"
 kubectl -n app-routing-system get svc nginx --watch
 ```
@@ -106,11 +106,11 @@ export KUBECTL_VERSION=$(kubectl version --output=json | \
 az acr build --registry "${REGISTRY%%.*}" --image ondemand:0.1.0 \
   --build-arg "KUBECTL_VERSION=$KUBECTL_VERSION" "$REPO"
 
-# Optional: demo desktop workload image for the Desktop app.
+## Optional: demo desktop workload image for the Desktop app.
 az acr build --registry "${REGISTRY%%.*}" --image ondemand-desktop:0.1.0 \
   --file "$REPO/Dockerfile.desktop" "$REPO"
 
-# Optional: single-node demo Slurm cluster and SSH login host.
+## Optional: single-node demo Slurm cluster and SSH login host.
 az acr build --registry "${REGISTRY%%.*}" --image ondemand-slurm:0.1.0 \
   --file "$REPO/Dockerfile.slurm" "$REPO"
 ```
@@ -134,15 +134,15 @@ Create the portal namespace, then create Secrets **outside version control**:
 ```bash
 kubectl create namespace "$NS"
 kubectl label namespace "$NS" pod-security.kubernetes.io/enforce=baseline
-# htpasswd is supplied by Apache's administrator utilities. It prompts for a password.
+## htpasswd is supplied by Apache's administrator utilities. It prompts for a password.
 AUTH_FILE=$(mktemp /tmp/ondemand-htpasswd.XXXXXX)
 htpasswd -Bc "$AUTH_FILE" ondemand
 kubectl -n "$NS" create secret generic ondemand-auth \
   --from-file="htpasswd=$AUTH_FILE"
 rm "$AUTH_FILE"
 
-# Demo only: create a self-signed certificate for the local demo hostname.
-# For production, use a certificate issued by a trusted CA instead.
+## Demo only: create a self-signed certificate for the local demo hostname.
+## For production, use a certificate issued by a trusted CA instead.
 TLS_DIR=$(mktemp -d /tmp/ondemand-tls.XXXXXX)
 openssl req -x509 -newkey rsa:2048 -sha256 -days 365 -nodes \
   -keyout "$TLS_DIR/tls.key" -out "$TLS_DIR/tls.crt" \
@@ -328,7 +328,7 @@ default service account cannot create Pods or read Secrets.
 ```bash
 kubectl -n "$NS" logs deployment/"${RELEASE}-ondemand"
 kubectl get namespaces
-# Use the generated workload namespace, normally <release>-ondemand-jobs-ondemand.
+## Use the generated workload namespace, normally <release>-ondemand-jobs-ondemand.
 kubectl -n "${RELEASE}-ondemand-jobs-ondemand" get pods,services
 kubectl -n "${RELEASE}-ondemand-jobs-ondemand" describe pod POD_NAME
 ```
@@ -344,7 +344,7 @@ exhausting namespace quotas. For an individual Pod confirmed `Succeeded` or
 JOBS_NS="${RELEASE}-ondemand-jobs-ondemand"
 POD=YOUR_COMPLETED_POD_NAME
 kubectl -n "$JOBS_NS" get pod "$POD" --output=jsonpath='{.status.phase}'
-# Only after confirming the Pod is finished:
+## Only after confirming the Pod is finished:
 kubectl -n "$JOBS_NS" delete "pod/$POD" "service/${POD}-service" \
   "configmap/${POD}-configmap" "secret/${POD}-secret" --ignore-not-found
 ```
