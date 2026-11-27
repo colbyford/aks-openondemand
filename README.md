@@ -2,54 +2,26 @@
 
 <h3 align="right">Colby T. Ford, Ph.D.</h3>
 
-Deploy [Open OnDemand](https://openondemand.org/) on Azure Kubernetes Service
-(AKS), and use its UI to launch JupyterLab, Jupyter Notebook, and shell-script
-batch workloads.
+Deploy [Open OnDemand](https://openondemand.org/) on Azure Kubernetes Service (AKS), and use its UI to launch JupyterLab, Jupyter Notebook, and shell-script batch workloads.
 
 - Blog Post: https://blog.colbyford.com/running-open-ondemand-on-azure-kubernetes-service-8798ab1e5d14
 
 ## Architecture and scope
 
-- `infra/main.bicep` provisions Linux AKS with Azure CNI/network policies,
-  autoscaling, an Azure Container Registry (ACR), and a premium Azure Files NFS
-  share. Storage access is restricted to the AKS subnet; ACR administration
-  credentials are disabled and the kubelet receives `AcrPull`.
-- `Dockerfile` installs Open OnDemand 4 on Rocky Linux 9. Apache runs in the
-  foreground; no privileged container or systemd is needed. Open OnDemand's
-  per-user NGINX/Passenger processes still require its normal root/sudo
-  machinery inside the portal container.
-- `charts/ondemand` deploys one authenticated portal and a separate workload
-  namespace. The **supported unit is one user per release**, authenticated as
-  the Unix account `ondemand` (UID/GID 1000). Use a separate hostname, password
-  Secret, and dedicated NFS share for every release. Do not share one release's
-  credentials or home directory between people. Release names (and any
-  `fullnameOverride`) must be unique across the cluster, since the workload
-  namespace is cluster-scoped.
-- The upstream Kubernetes scheduler adapter submits **Pods**, not Kubernetes
-  Jobs or Slurm jobs. The UI can track and cancel workloads. Interactive
-  services use private AKS node IPs and NodePorts through Open OnDemand's
-  authenticated `/node/` proxy; browsers need access only to the HTTPS portal.
-- Both apps share `/home/ondemand` with the portal. Workload resource requests,
-  limits, namespace quotas, admission rules, network policies, and execution
-  timeouts constrain workloads. Sessions survive portal restarts through NFS.
+- `infra/main.bicep` provisions Linux AKS with Azure CNI/network policies, autoscaling, an Azure Container Registry (ACR), and a premium Azure Files NFS share. Storage access is restricted to the AKS subnet; ACR administration credentials are disabled and the kubelet receives `AcrPull`.
+- `Dockerfile` installs Open OnDemand 4 on Rocky Linux 9. Apache runs in the foreground; no privileged container or systemd is needed. Open OnDemand's per-user NGINX/Passenger processes still require its normal root/sudo machinery inside the portal container.
+- `charts/ondemand` deploys one authenticated portal and a separate workload namespace. The **supported unit is one user per release**, authenticated as the Unix account `ondemand` (UID/GID 1000). Use a separate hostname, password Secret, and dedicated NFS share for every release. Do not share one release's credentials or home directory between people. Release names (and any `fullnameOverride`) must be unique across the cluster, since the workload namespace is cluster-scoped.
+- The upstream Kubernetes scheduler adapter submits **Pods**, not Kubernetes Jobs or Slurm jobs. The UI can track and cancel workloads. Interactive services use private AKS node IPs and NodePorts through Open OnDemand's authenticated `/node/` proxy; browsers need access only to the HTTPS portal.
+- Both apps share `/home/ondemand` with the portal. Workload resource requests, limits, namespace quotas, admission rules, network policies, and execution timeouts constrain workloads. Sessions survive portal restarts through NFS.
 
-This is a community deployment, not an OSC-supported production container or
-a replacement for a multi-user HPC identity service. For a shared institutional
-portal, integrate directory identities, per-user Kubernetes credentials/RBAC,
-and storage authorization before extending this design.
+> [!NOTE]
+> This is an example demo deployment, not an OSC-supported production container or a replacement for a multi-user HPC identity service. For a shared institutional portal, integrate directory identities, per-user Kubernetes credentials/RBAC, and storage authorization before extending this design.
 
 ## Prerequisites
 
-Azure CLI, kubectl, Helm 3.13+, Docker (or ACR Build), and an Azure subscription
-with permission to create resources and role assignments are required. AKS must
-support `admissionregistration.k8s.io/v1` ValidatingAdmissionPolicy (Kubernetes
-1.30+). The demo below uses the AKS Application Routing add-on for ingress. A
-production deployment needs a hostname in DNS and a matching trusted TLS
-certificate; the demo can use a local hosts-file entry and a self-signed
-certificate instead.
+Azure CLI, kubectl, Helm 3.13+, Docker (or ACR Build), and an Azure subscription with permission to create resources and role assignments are required. AKS must support `admissionregistration.k8s.io/v1` ValidatingAdmissionPolicy (Kubernetes 1.30+). The demo below uses the AKS Application Routing add-on for ingress. A production deployment needs a hostname in DNS and a matching trusted TLS certificate; the demo can use a local hosts-file entry and a self-signed certificate instead.
 
-These commands create billable Azure resources. Run them from an administrator
-workstation. Set an **absolute** repository path:
+These commands create billable Azure resources. Run them from an administrator workstation. Set an **absolute** repository path:
 
 ```bash
 export REPO=/absolute/path/to/aks-openondemand
@@ -80,20 +52,15 @@ export INGRESS_IP=$(kubectl -n app-routing-system get svc nginx \
 printf '%s\n' "$INGRESS_IP"
 ```
 
-The public LoadBalancer IP may take a few minutes to appear. The demo hostname
-is local to your workstation; it does not require public DNS.
+The public LoadBalancer IP may take a few minutes to appear. The demo hostname is local to your workstation; it does not require public DNS.
 
-`nodeMinCount` must not exceed `nodeMaxCount`. Use a region supporting the chosen
-VM size and premium Azure Files NFS. The infrastructure uses node subnet
-`10.20.0.0/20` and service CIDR `10.21.0.0/16`; avoid overlapping connected
-networks. The NFS share uses `NoRootSquash` so the portal can initialize the
-home directory, and must remain restricted to trusted AKS nodes.
+
+> [!NOTE]
+> `nodeMinCount` must not exceed `nodeMaxCount`. Use a region supporting the chosen VM size and premium Azure Files NFS. The infrastructure uses node subnet `10.20.0.0/20` and service CIDR `10.21.0.0/16`; avoid overlapping connected networks. The NFS share uses `NoRootSquash` so the portal can initialize the home directory, and must remain restricted to trusted AKS nodes.
 
 ## Build the portal image
 
-Use a kubectl version matching the cluster's actual patch version, including
-the `v` prefix (available from `kubectl version --output=json`). The Dockerfile
-verifies the downloaded kubectl binary's published SHA-256 checksum.
+Use a kubectl version matching the cluster's actual patch version, including the `v` prefix (available from `kubectl version --output=json`). The Dockerfile verifies the downloaded kubectl binary's published SHA-256 checksum.
 
 ```bash
 export REGISTRY=$(az deployment group show --name ondemand --resource-group "$RG" \
@@ -117,17 +84,7 @@ az acr build --registry "${REGISTRY%%.*}" --image ondemand-slurm:0.1.0 \
   --file "$REPO/Dockerfile.slurm" "$REPO"
 ```
 
-The image targets Linux amd64 by default; pass the appropriate `TARGETARCH`
-when building for another architecture. Rebuild regularly for OS/Open OnDemand
-security updates. Use reviewed, versioned workload images with `bash`,
-`timeout`, and Python 3; the Jupyter image must also contain Jupyter Server 2,
-JupyterLab, and Notebook 7. For example, choose a reviewed version of
-`quay.io/jupyter/base-notebook` for both apps — an existing dated tag such as
-`2026-11-23`, not an unpinned `latest` tag or this chart's own version number.
-The optional Desktop app additionally needs an image with TigerVNC (`Xvnc` and
-`vncpasswd`), `websockify`, a noVNC web root providing `vnc_lite.html`, and an
-X session such as Xfce (`startxfce4`), all runnable as an unprivileged user;
-`Dockerfile.desktop` builds a working example.
+The image targets Linux amd64 by default; pass the appropriate `TARGETARCH` when building for another architecture. Rebuild regularly for OS/Open OnDemand security updates. Use reviewed, versioned workload images with `bash`, `timeout`, and Python 3; the Jupyter image must also contain Jupyter Server 2, JupyterLab, and Notebook 7. For example, choose a reviewed version of `quay.io/jupyter/base-notebook` for both apps — an existing dated tag such as `2026-11-23`, not an unpinned `latest` tag or this chart's own version number. The optional Desktop app additionally needs an image with TigerVNC (`Xvnc` and `vncpasswd`), `websockify`, a noVNC web root providing `vnc_lite.html`, and an X session such as Xfce (`startxfce4`), all runnable as an unprivileged user; `Dockerfile.desktop` builds a working example.
 
 ## Configure authentication, TLS, and networking
 
@@ -154,13 +111,7 @@ kubectl -n "$NS" create secret tls ondemand-tls \
   --cert="$TLS_DIR/tls.crt" --key="$TLS_DIR/tls.key"
 ```
 
-The authentication file must contain exactly one entry, named `ondemand`.
-Sign in as `ondemand` with the password entered at the `htpasswd` prompt. The
-self-signed certificate is not trusted by browsers, so expect a warning during
-this demo. Never disable HTTPS: HTTP Basic authentication sends the password
-on each request. The ingress must redirect/reject HTTP, honor the configured
-hostname, and preserve WebSocket connections. Apache uses internal HTTP only;
-do not publish its Service separately.
+The authentication file must contain exactly one entry, named `ondemand`. Sign in as `ondemand` with the password entered at the `htpasswd` prompt. The self-signed certificate is not trusted by browsers, so expect a warning during this demo. Never disable HTTPS: HTTP Basic authentication sends the password on each request. The ingress must redirect/reject HTTP, honor the configured hostname, and preserve WebSocket connections. Apache uses internal HTTP only; do not publish its Service separately.
 
 Get the API endpoint's IPv4 addresses for workload connection discovery:
 
@@ -172,14 +123,9 @@ export API_CIDRS=$(python3 -c \
   "$API_URL")
 ```
 
-Update these CIDRs if the API endpoint's addresses change. Network policy can
-apply after Service DNAT, so allowing only `kubernetes.default`'s ClusterIP
-is insufficient. Keep the AKS NodePort range (normally 30000–32767) private;
-the portal must reach it within the node subnet. NodePort SNAT can change the
-source address to a node IP, hence the explicit subnet allowance.
+Update these CIDRs if the API endpoint's addresses change. Network policy can apply after Service DNAT, so allowing only `kubernetes.default`'s ClusterIP is insufficient. Keep the AKS NodePort range (normally 30000–32767) private; the portal must reach it within the node subnet. NodePort SNAT can change the source address to a node IP, hence the explicit subnet allowance.
 
-Create a local values file, substituting a reviewed workload image (an
-existing dated `quay.io/jupyter/base-notebook` tag, not this chart's version):
+Create a local values file, substituting a reviewed workload image (an existing dated `quay.io/jupyter/base-notebook` tag, not this chart's version):
 
 ```bash
 export WORKLOAD_IMAGE=quay.io/jupyter/base-notebook:2026-11-23
@@ -207,15 +153,8 @@ networkPolicy:
 EOF
 ```
 
-Use your controller's class and annotations if it is not the AKS Application
-Routing add-on.
-`nodeHostRegex` must match only actual AKS node addresses/hostnames; never use
-an arbitrary-host wildcard. The supplied Jupyter app uses the node's IPv4
-address and configures its base URL for Open OnDemand's `/node/` proxy.
-Do not set pod-level `runAsUser` or `runAsGroup`: Kubernetes makes projected
-service-account tokens mode `0600` when a UID is specified, but the Open
-OnDemand PUN reads the token as `ondemand` (UID 1000). The chart relies on the
-image's root defaults for Apache and switches to `ondemand` for the PUN.
+Use your controller's class and annotations if it is not the AKS Application Routing add-on.
+`nodeHostRegex` must match only actual AKS node addresses/hostnames; never use an arbitrary-host wildcard. The supplied Jupyter app uses the node's IPv4 address and configures its base URL for Open OnDemand's `/node/` proxy. Do not set pod-level `runAsUser` or `runAsGroup`: Kubernetes makes projected service-account tokens mode `0600` when a UID is specified, but the Open OnDemand PUN reads the token as `ondemand` (UID 1000). The chart relies on the image's root defaults for Apache and switches to `ondemand` for the PUN.
 
 ## Install and use
 
@@ -230,8 +169,7 @@ kubectl -n "$NS" get pods,services,ingress
 kubectl -n app-routing-system get svc nginx -o wide
 ```
 
-Use the controller Service's `EXTERNAL-IP` as the public IP; the Ingress
-`ADDRESS` column may remain blank.
+Use the controller Service's `EXTERNAL-IP` as the public IP; the Ingress `ADDRESS` column may remain blank.
 
 For this local demo, map the hostname to the ingress IP on your workstation.
 Print the line to add to its hosts file:
@@ -240,48 +178,22 @@ Print the line to add to its hosts file:
 printf '%s %s\n' "$INGRESS_IP" "$HOST"
 ```
 
-On macOS/Linux, append the printed line to `/etc/hosts`; on Windows, add it to
-`C:\Windows\System32\drivers\etc\hosts`. This mapping is local to that
-workstation. Then open `https://$HOST` and authenticate as `ondemand` with the
-password you chose.
+On macOS/Linux, append the printed line to `/etc/hosts`; on Windows, add it to `C:\Windows\System32\drivers\etc\hosts`. This mapping is local to that workstation. Then open `https://$HOST` and authenticate as `ondemand` with the password you chose.
 
-For a public deployment, create a DNS record pointing the
-hostname to the ingress IP and use a trusted certificate.
+For a public deployment, create a DNS record pointing the hostname to the ingress IP and use a trusted certificate.
 
-1. Open **Interactive Apps → Jupyter**, choose JupyterLab or Notebook, CPU,
-   memory, and duration, and launch. In **My Interactive Sessions**, wait for
-   the session to run, then connect. Each session has a random token in addition
-   to portal authentication; XSRF protection remains enabled. If the cluster
-   autoscaler must first add a node, the card can briefly show **Held** with a
-   "bad state" warning while the pod is unschedulable; it returns to Running on
-   its own once the node is ready — refresh the page.
-2. Use **Files** to create/upload a `.sh` file in your home directory, e.g.
-   `scripts/hello.sh`, containing `echo "Hello from AKS"; date`.
-3. Open the **Batch** interactive application and submit that relative path.
-   The app launches a non-interactive Pod and writes `output.log` and its exit
-   status in the session's output directory on NFS. View these through Files.
-4. With `apps.desktopImage` configured, open **Interactive Apps → Desktop** to
-   launch a graphical Linux desktop. The pod runs a loopback-only VNC server
-   protected by a random per-session password; only the noVNC/websockify
-   endpoint is reachable, through the same authenticated `/node/` proxy.
-5. Use the session's delete/cancel action to stop an active workload. App
-   execution is limited to the requested duration; the adapter's wall-time
-   annotation alone is not an enforced deadline. Completed workloads require
-   the administrator cleanup described below.
+1. Open **Interactive Apps → Jupyter**, choose JupyterLab or Notebook, CPU, memory, and duration, and launch. In **My Interactive Sessions**, wait for the session to run, then connect. Each session has a random token in addition to portal authentication; XSRF protection remains enabled. If the cluster autoscaler must first add a node, the card can briefly show **Held** with a "bad state" warning while the pod is unschedulable; it returns to Running on its own once the node is ready — refresh the page.
+2. Use **Files** to create/upload a `.sh` file in your home directory, e.g. `scripts/hello.sh`, containing `echo "Hello from AKS"; date`.
+3. Open the **Batch** interactive application and submit that relative path. The app launches a non-interactive Pod and writes `output.log` and its exit status in the session's output directory on NFS. View these through Files.
+4. With `apps.desktopImage` configured, open **Interactive Apps → Desktop** to launch a graphical Linux desktop. The pod runs a loopback-only VNC server protected by a random per-session password; only the noVNC/websockify endpoint is reachable, through the same authenticated `/node/` proxy.
+5. Use the session's delete/cancel action to stop an active workload. App execution is limited to the requested duration; the adapter's wall-time annotation alone is not an enforced deadline. Completed workloads require the administrator cleanup described below.
 
-These Kubernetes-native interactive apps are separate from the optional Slurm
-workflow below. The stock `bc_desktop` app is removed from the portal image;
-Desktop sessions come from the chart's own app when `apps.desktopImage` is
-set. The web Shell app stays hidden unless the Slurm login cluster is enabled.
-Add further application
-templates under `charts/ondemand/files/apps`, with the matching ConfigMap
-mounts in `templates/apps.yaml` and `templates/deployment.yaml`.
+These Kubernetes-native interactive apps are separate from the optional Slurm workflow below. The stock `bc_desktop` app is removed from the portal image; Desktop sessions come from the chart's own app when `apps.desktopImage` is set. The web Shell app stays hidden unless the Slurm login cluster is enabled.
+Add further application templates under `charts/ondemand/files/apps`, with the matching ConfigMap mounts in `templates/apps.yaml` and `templates/deployment.yaml`.
 
 ## Optional: Slurm jobs and the web shell
 
-The chart can run a self-contained single-node Slurm cluster to demonstrate
-scheduler workflows and the browser shell. Build the Slurm image (above) and
-create a munge key Secret **outside version control**:
+The chart can run a self-contained single-node Slurm cluster to demonstrate scheduler workflows and the browser shell. Build the Slurm image (above) and create a munge key Secret **outside version control**:
 
 ```bash
 MUNGE_FILE=$(mktemp /tmp/ondemand-munge.XXXXXX)
@@ -300,32 +212,16 @@ slurm:
   existingMungeSecret: ondemand-munge
 ```
 
-This deploys a `slurmctld`/`slurmd`/`sshd` StatefulSet sharing the NFS home
-and adds to the portal:
+This deploys a `slurmctld`/`slurmd`/`sshd` StatefulSet sharing the NFS home and adds to the portal:
 
-- **Clusters → Slurm Shell Access**: a browser terminal logged into the Slurm
-  node as `ondemand` (the portal generates an SSH keypair in the shared home).
-- **Jobs** and **Active Jobs** against the Slurm cluster: compose and submit
-  scripts with `#SBATCH` directives; `sinfo`, `sbatch`, and `squeue` also work
-  from the shell. Interactive `srun` works inside the Slurm shell session.
+- **Clusters → Slurm Shell Access**: a browser terminal logged into the Slurm node as `ondemand` (the portal generates an SSH keypair in the shared home).
+- **Jobs** and **Active Jobs** against the Slurm cluster: compose and submit scripts with `#SBATCH` directives; `sinfo`, `sbatch`, and `squeue` also work from the shell. Interactive `srun` works inside the Slurm shell session.
 
-Demo limitations: a single fixed-size node sized by `slurm.cpus` and
-`slurm.realMemoryMB`; queue state is lost when the Slurm pod restarts; there
-is no `slurmdbd`, so finished jobs leave `squeue` after an hour and `sacct`
-history is unavailable; `sshd`/`slurmd` run as root inside the pod under the
-baseline Pod Security profile; SSH host keys are ephemeral, so the portal
-disables known-hosts pinning for this one in-cluster hostname only.
+Demo limitations: a single fixed-size node sized by `slurm.cpus` and `slurm.realMemoryMB`; queue state is lost when the Slurm pod restarts; there is no `slurmdbd`, so finished jobs leave `squeue` after an hour and `sacct` history is unavailable; `sshd`/`slurmd` run as root inside the pod under the baseline Pod Security profile; SSH host keys are ephemeral, so the portal disables known-hosts pinning for this one in-cluster hostname only.
 
 ## Verification and operations
 
-After installation, check an unauthenticated HTTPS request is denied or
-challenges for authentication, then log in and exercise **both** Jupyter modes
-(including kernel execution and WebSockets), a successful batch script, a
-failing script, a Desktop session if `apps.desktopImage` is configured,
-cancellation, and the configured duration limit. Confirm files persist after
-a portal restart. In the workload namespace, check Pods run as UID/GID 1000,
-privileged/hostPath/other-user NFS mounts are rejected, quotas apply, and the
-default service account cannot create Pods or read Secrets.
+After installation, check an unauthenticated HTTPS request is denied or challenges for authentication, then log in and exercise **both** Jupyter modes (including kernel execution and WebSockets), a successful batch script, a failing script, a Desktop session if `apps.desktopImage` is configured, cancellation, and the configured duration limit. Confirm files persist after a portal restart. In the workload namespace, check Pods run as UID/GID 1000, privileged/hostPath/other-user NFS mounts are rejected, quotas apply, and the default service account cannot create Pods or read Secrets.
 
 ```bash
 kubectl -n "$NS" logs deployment/"${RELEASE}-ondemand"
@@ -335,12 +231,9 @@ kubectl -n "${RELEASE}-ondemand-jobs-ondemand" get pods,services
 kubectl -n "${RELEASE}-ondemand-jobs-ondemand" describe pod POD_NAME
 ```
 
-**Completed-resource cleanup is required.** Open OnDemand skips scheduler
-deletion for sessions already marked completed, and the adapter does not add
-garbage-collection owner references. Deleting completed UI entries therefore
-does not remove their Pods/ConfigMaps. Clean them up periodically to avoid
-exhausting namespace quotas. For an individual Pod confirmed `Succeeded` or
-`Failed`:
+**Completed-resource cleanup is required.** Open OnDemand skips scheduler deletion for sessions already marked completed, and the adapter does not add garbage-collection owner references. Deleting completed UI entries therefore does not remove their Pods/ConfigMaps. Clean them up periodically to avoid exhausting namespace quotas.
+
+For an individual Pod confirmed `Succeeded` or `Failed`:
 
 ```bash
 JOBS_NS="${RELEASE}-ondemand-jobs-ondemand"
@@ -351,39 +244,22 @@ kubectl -n "$JOBS_NS" delete "pod/$POD" "service/${POD}-service" \
   "configmap/${POD}-configmap" "secret/${POD}-secret" --ignore-not-found
 ```
 
-Alternatively, **only after all sessions have stopped**, remove all
-adapter-managed resources (this preserves the namespace's API CA ConfigMap):
+Alternatively, **only after all sessions have stopped**, remove all adapter-managed resources (this preserves the namespace's API CA ConfigMap):
 
 ```bash
 kubectl -n "$JOBS_NS" delete pod,service,configmap,secret \
   --selector=app.kubernetes.io/managed-by=open-ondemand
 ```
 
-The portal credential can manage workloads only in its workload namespace.
-Workloads receive a limited credential to get Pods and Services and create
-Secrets; they cannot get or list Secrets or create Pods. The Jupyter and
-Desktop runners use the create permission for their per-session connection
-Secret, which the portal adapter reads to render the authenticated connection
-button. Neither
-credential has cluster-admin permissions. Network policies limit workload
-egress to DNS, the specified API endpoint, and public IPv4 destinations; add
-narrowly scoped rules if your jobs need private data services.
-The baseline Pod Security profile permits the adapter's inline NFS volumes;
-additional admission rules enforce the expected identity and permitted export.
-Do not grant workload users access to modify those policies, namespaces, or
-role bindings. Namespace isolation is not a substitute for hard multi-tenant
-node/storage isolation.
+The portal credential can manage workloads only in its workload namespace. Workloads receive a limited credential to get Pods and Services and create Secrets; they cannot get or list Secrets or create Pods. The Jupyter and Desktop runners use the create permission for their per-session connection Secret, which the portal adapter reads to render the authenticated connection button. Neither credential has cluster-admin permissions. Network policies limit workload egress to DNS, the specified API endpoint, and public IPv4 destinations; add narrowly scoped rules if your jobs need private data services. The baseline Pod Security profile permits the adapter's inline NFS volumes; additional admission rules enforce the expected identity and permitted export.
 
-`helm uninstall "$RELEASE" --namespace "$NS"` removes the portal and chart
-resources; user storage is retained. Back up NFS first and check for remaining
-Pods, services, namespaces, and retained storage before deleting Azure
-resources. To remove the entire demo, explicitly delete its resource group:
-`az group delete --name "$RG"`. This permanently deletes the NFS account/data.
+Do not grant workload users access to modify those policies, namespaces, or role bindings. Namespace isolation is not a substitute for hard multi-tenant node/storage isolation.
 
-Local validation includes Helm lint/template rendering, Bicep compilation,
-and shell syntax checks. No live Azure deployment is implied by these checks.
-The portal image build needs access to Rocky/EPEL/OSC package repositories and
-`dl.k8s.io`; application pulls need access to your chosen registry.
+`helm uninstall "$RELEASE" --namespace "$NS"` removes the portal and chart resources; user storage is retained. Back up NFS first and check for remaining Pods, services, namespaces, and retained storage before deleting Azure resources.
+
+To remove the entire demo, explicitly delete its resource group: `az group delete --name "$RG"`. This permanently deletes the NFS account/data.
+
+Local validation includes Helm lint/template rendering, Bicep compilation, and shell syntax checks. No live Azure deployment is implied by these checks. The portal image build needs access to Rocky/EPEL/OSC package repositories and `dl.k8s.io`; application pulls need access to your chosen registry.
 
 ### Upstream references
 
